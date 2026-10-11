@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "AgroSense API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "API REST del backend de AgroSense: cuentas, fincas, cultivos, sensores IoT, lecturas, alertas, riego, resumen, predicciones de riego y asistente de IA.\n\nTodas las rutas salvo las marcadas como públicas exigen la cabecera `Authorization: Bearer <token>`, con el token que devuelve `POST /api/auth/login` (JWT HS512, válido 60 minutos). Cada operación se limita a los datos del usuario del token: lo que pertenece a otra cuenta se responde como 404.\n\nLos errores tienen siempre la forma `{\"message\": \"...\"}`, con el mensaje escrito para el usuario final; los de validación añaden `fields` con el mensaje de cada campo rechazado.\n\nLas fechas con hora son locales del servidor y no llevan zona (`2026-10-11T10:51:19.308`)."
   },
   "servers": [
@@ -18,7 +18,7 @@
     { "name": "Riego" },
     { "name": "Resumen" },
     { "name": "Predicciones", "description": "Predicciones de riego del servicio IA-AGROSENSE. Sin `AI_SERVICE_URL` en el backend no se genera ninguna." },
-    { "name": "Asistente de IA", "description": "Asistente conversacional (Google Gemini). Disponible en producción cuando la rama `feat/ai-assistant` se fusione en `main` y el servicio tenga `GEMINI_API_KEY`; sin la llave responde 503." }
+    { "name": "Asistente de IA", "description": "Asistente conversacional (Google Gemini). Cuando el modelo no está configurado o no responde, las preguntas escritas se contestan igualmente con los datos de la finca del usuario y la respuesta lo indica con `source: local`." }
   ],
   "security": [{ "bearerAuth": [] }],
   "paths": {
@@ -357,7 +357,7 @@
       "post": {
         "tags": ["Asistente de IA"],
         "summary": "Pregunta escrita al asistente",
-        "description": "La respuesta tiene en cuenta las cifras de la finca del usuario y los turnos anteriores que se envíen. Límite: 10 preguntas por minuto y usuario.",
+        "description": "La respuesta tiene en cuenta las últimas lecturas de cada cultivo del usuario, comparadas con los límites de ese cultivo, y los turnos anteriores que se envíen. Si el modelo no está disponible, responde el propio servicio con esos mismos datos (`source: local`), sin usar los turnos anteriores. Límite: 10 preguntas por minuto y usuario.",
         "operationId": "aiChat",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatRequest" } } } },
         "responses": {
@@ -367,7 +367,7 @@
           "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "503": { "description": "El asistente no está configurado (falta `GEMINI_API_KEY`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "El modelo no está configurado y las respuestas con los datos de la finca están desactivadas (`AI_LOCAL_ANSWERS=false`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
@@ -376,7 +376,7 @@
       "post": {
         "tags": ["Asistente de IA"],
         "summary": "Pregunta hablada al asistente",
-        "description": "Formulario con la grabación (`audio`), con su texto (`transcript`) o con ambos; si llega el texto, el audio no se usa. El mismo límite de consultas que la pregunta escrita.",
+        "description": "Formulario con la grabación (`audio`), con su texto (`transcript`) o con ambos; si llega el texto, el audio no se usa y se responde como una pregunta escrita. Una grabación sin texto necesita el modelo: sin él la respuesta es 503. El mismo límite de consultas que la pregunta escrita.",
         "operationId": "aiVoice",
         "requestBody": {
           "required": true,
@@ -401,7 +401,7 @@
           "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "503": { "description": "El asistente no está configurado (falta `GEMINI_API_KEY`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "Llegó una grabación sin texto y el modelo, que es quien la escucha, no está configurado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
@@ -674,9 +674,10 @@
       },
       "AiResponse": {
         "type": "object",
-        "required": ["reply"],
+        "required": ["reply", "source"],
         "properties": {
           "reply": { "type": "string" },
+          "source": { "type": "string", "enum": ["model", "local"], "description": "`model` cuando respondió el modelo de lenguaje; `local` cuando respondió el servicio por su cuenta con los datos de la finca." },
           "transcript": { "type": "string", "description": "Lo que el asistente entendió de un mensaje de voz. No aparece en las preguntas escritas." }
         }
       }
