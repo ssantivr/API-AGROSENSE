@@ -1,0 +1,84 @@
+# Peticiones de ejemplo para la API de AgroSense.
+# Se ejecutan con la extensión REST Client de VS Code o con el cliente HTTP de IntelliJ.
+# La contraseña no se escribe aquí: defínela en el entorno del cliente (variable AGROSENSE_PASSWORD).
+
+@baseUrl = https://backend-agrosense-u5mz.onrender.com
+@email = demo@agrosense.co
+@password = {{$processEnv AGROSENSE_PASSWORD}}
+
+### Estado del servicio (pública)
+GET {{baseUrl}}/api/health
+
+### Iniciar sesión (pública). El token se reutiliza en las demás peticiones.
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+###
+@token = {{login.response.body.token}}
+
+### Comprobar si un correo ya tiene cuenta (pública)
+GET {{baseUrl}}/api/auth/check-user?email={{email}}
+
+### Fincas
+GET {{baseUrl}}/api/fincas
+Authorization: Bearer {{token}}
+
+### Cultivos activos (añade ?estateId=1 para una sola finca)
+GET {{baseUrl}}/api/cultivos
+Authorization: Bearer {{token}}
+
+### Sensores de un cultivo
+GET {{baseUrl}}/api/crops/1/sensors
+Authorization: Bearer {{token}}
+
+### Registrar una lectura
+POST {{baseUrl}}/api/readings
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "sensorCode": "AS-001", "value": 52.3, "unit": "%" }
+
+### Últimas lecturas de un sensor
+GET {{baseUrl}}/api/sensors/1/readings?limit=20
+Authorization: Bearer {{token}}
+
+### Alertas sin atender
+GET {{baseUrl}}/api/alerts
+Authorization: Bearer {{token}}
+
+### Marcar una alerta como atendida
+PATCH {{baseUrl}}/api/alerts/1/acknowledge
+Authorization: Bearer {{token}}
+
+### Registrar un riego manual
+POST {{baseUrl}}/api/riego
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "cropId": 1, "waterLiters": 120.5, "durationMinutes": 30, "reason": "Humedad baja" }
+
+### Historial de riegos de un cultivo
+GET {{baseUrl}}/api/riego/cultivo/1
+Authorization: Bearer {{token}}
+
+### Resumen general
+GET {{baseUrl}}/api/dashboard
+Authorization: Bearer {{token}}
+
+### Pedir una predicción de riego (responde 202; el resultado aparece después en el historial)
+POST {{baseUrl}}/api/crops/1/predictions
+Authorization: Bearer {{token}}
+
+### Predicciones guardadas de un cultivo
+GET {{baseUrl}}/api/crops/1/predictions
+Authorization: Bearer {{token}}
+
+### Pregunta escrita al asistente de IA
+POST {{baseUrl}}/api/ai/chat
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "message": "¿Cuándo conviene regar el café?", "history": [] }

@@ -1,0 +1,670 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgroSense API",
+    "version": "1.0.0",
+    "description": "API REST del backend de AgroSense: cuentas, fincas, cultivos, sensores IoT, lecturas, alertas, riego, resumen, predicciones de riego y asistente de IA.\n\nTodas las rutas salvo las marcadas como públicas exigen la cabecera `Authorization: Bearer <token>`, con el token que devuelve `POST /api/auth/login` (JWT HS512, válido 60 minutos). Cada operación se limita a los datos del usuario del token: lo que pertenece a otra cuenta se responde como 404.\n\nLos errores tienen siempre la forma `{\"message\": \"...\"}`, con el mensaje escrito para el usuario final; los de validación añaden `fields` con el mensaje de cada campo rechazado.\n\nLas fechas con hora son locales del servidor y no llevan zona (`2026-10-11T10:51:19.308`)."
+  },
+  "servers": [
+    { "url": "https://backend-agrosense-u5mz.onrender.com", "description": "Producción (Render). El plan gratuito lo duerme tras 15 minutos sin uso; la primera petición puede tardar más de un minuto." },
+    { "url": "http://localhost:9000", "description": "Local" }
+  ],
+  "tags": [
+    { "name": "Estado", "description": "Comprobación de que el servicio responde." },
+    { "name": "Cuentas", "description": "Inicio de sesión y registro. Rutas públicas." },
+    { "name": "Fincas y cultivos" },
+    { "name": "Sensores y lecturas" },
+    { "name": "Alertas" },
+    { "name": "Riego" },
+    { "name": "Resumen" },
+    { "name": "Predicciones", "description": "Predicciones de riego del servicio IA-AGROSENSE. Sin `AI_SERVICE_URL` en el backend no se genera ninguna." },
+    { "name": "Asistente de IA", "description": "Asistente conversacional (Google Gemini). Disponible en producción cuando la rama `feat/ai-assistant` se fusione en `main` y el servicio tenga `GEMINI_API_KEY`; sin la llave responde 503." }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Estado"],
+        "summary": "Estado del servicio",
+        "operationId": "health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "El servicio responde.",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["status"], "properties": { "status": { "type": "string", "example": "UP" } } } } }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Cuentas"],
+        "summary": "Iniciar sesión",
+        "description": "Devuelve el token. Tras 5 intentos fallidos para una cuenta (o 20 desde una dirección) los siguientes se rechazan con 429 durante 15 minutos.",
+        "operationId": "login",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+        "responses": {
+          "200": { "description": "Credenciales correctas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponse" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "description": "Credenciales incorrectas o cuenta desactivada; la respuesta es la misma en ambos casos.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": {
+            "description": "Demasiados intentos fallidos.",
+            "headers": { "Retry-After": { "description": "Segundos que faltan para poder intentarlo de nuevo.", "schema": { "type": "integer" } } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": ["Cuentas"],
+        "summary": "Crear una cuenta",
+        "description": "Crea una cuenta con rol `farmer`. No devuelve token: después hay que iniciar sesión.",
+        "operationId": "register",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequest" } } } },
+        "responses": {
+          "201": { "description": "Cuenta creada.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RegisterResponse" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "409": { "description": "El correo ya tiene una cuenta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/auth/check-user": {
+      "get": {
+        "tags": ["Cuentas"],
+        "summary": "Comprobar si un correo ya tiene cuenta",
+        "operationId": "checkUser",
+        "security": [],
+        "parameters": [{ "name": "email", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Resultado de la comprobación.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserCheckResponse" } } } },
+          "400": { "description": "Falta el parámetro `email`.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/auth/email-available": {
+      "get": {
+        "tags": ["Cuentas"],
+        "summary": "Nombre anterior de /api/auth/check-user",
+        "operationId": "emailAvailable",
+        "deprecated": true,
+        "security": [],
+        "parameters": [{ "name": "email", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Resultado de la comprobación.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UserCheckResponse" } } } },
+          "400": { "description": "Falta el parámetro `email`.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/fincas": {
+      "get": {
+        "tags": ["Fincas y cultivos"],
+        "summary": "Fincas del usuario, por nombre",
+        "operationId": "listEstates",
+        "responses": {
+          "200": { "description": "Lista de fincas.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Estate" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Fincas y cultivos"],
+        "summary": "Registrar una finca",
+        "description": "Roles `ADMIN` y `FARMER`.",
+        "operationId": "createEstate",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EstateRequest" } } } },
+        "responses": {
+          "201": { "description": "Finca creada.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Estate" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/api/cultivos": {
+      "get": {
+        "tags": ["Fincas y cultivos"],
+        "summary": "Cultivos activos del usuario, por nombre",
+        "operationId": "listCrops",
+        "parameters": [{ "name": "estateId", "in": "query", "required": false, "description": "Limita la lista a una finca; sin él se listan los de todas.", "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Lista de cultivos.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Crop" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Fincas y cultivos"],
+        "summary": "Registrar un cultivo en una finca",
+        "description": "Roles `ADMIN` y `FARMER`. Cada rango (humedad, temperatura, pH) es opcional entero: sin sus dos extremos se usa el rango por defecto (humedad 40–80, temperatura 15–35, pH 5,5–7,0).",
+        "operationId": "createCrop",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CropRequest" } } } },
+        "responses": {
+          "201": { "description": "Cultivo creado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Crop" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/crops/{cropId}/sensors": {
+      "get": {
+        "tags": ["Sensores y lecturas"],
+        "summary": "Sensores de un cultivo, por código",
+        "operationId": "listSensors",
+        "parameters": [{ "$ref": "#/components/parameters/cropId" }],
+        "responses": {
+          "200": { "description": "Lista de sensores.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Sensor" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/sensors": {
+      "post": {
+        "tags": ["Sensores y lecturas"],
+        "summary": "Registrar un sensor en un cultivo",
+        "description": "El código de sensor es único en todo el sistema y se guarda en mayúsculas.",
+        "operationId": "createSensor",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SensorRequest" } } } },
+        "responses": {
+          "201": { "description": "Sensor creado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Sensor" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "Ya existe un sensor con ese código.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/readings": {
+      "post": {
+        "tags": ["Sensores y lecturas"],
+        "summary": "Registrar una lectura de un sensor",
+        "description": "Si el valor queda fuera del rango del cultivo se crea una alerta (una sola abierta por cultivo y tipo). Las lecturas también pueden llegar por MQTT.",
+        "operationId": "recordReading",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadingRequest" } } } },
+        "responses": {
+          "201": { "description": "Lectura registrada.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Reading" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "description": "El sensor, su cultivo o su cuenta están inactivos.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/sensors/{sensorId}/readings": {
+      "get": {
+        "tags": ["Sensores y lecturas"],
+        "summary": "Últimas lecturas de un sensor, de la más reciente a la más antigua",
+        "operationId": "listReadings",
+        "parameters": [
+          { "name": "sensorId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "required": false, "description": "Cuántas devolver. Se ajusta al intervalo 1–500.", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Lista de lecturas.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Reading" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/alerts": {
+      "get": {
+        "tags": ["Alertas"],
+        "summary": "Alertas sin atender del usuario, de la más reciente a la más antigua",
+        "operationId": "listAlerts",
+        "parameters": [{ "name": "limit", "in": "query", "required": false, "description": "Cuántas devolver. Se ajusta al intervalo 1–100.", "schema": { "type": "integer", "default": 50 } }],
+        "responses": {
+          "200": { "description": "Lista de alertas.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Alert" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/crops/{cropId}/alerts": {
+      "get": {
+        "tags": ["Alertas"],
+        "summary": "Alertas sin atender de un cultivo",
+        "operationId": "listCropAlerts",
+        "parameters": [
+          { "$ref": "#/components/parameters/cropId" },
+          { "name": "limit", "in": "query", "required": false, "description": "Cuántas devolver. Se ajusta al intervalo 1–100.", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Lista de alertas.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Alert" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/alerts/{alertId}/acknowledge": {
+      "patch": {
+        "tags": ["Alertas"],
+        "summary": "Marcar una alerta como atendida",
+        "description": "Roles `ADMIN` y `FARMER`.",
+        "operationId": "acknowledgeAlert",
+        "parameters": [{ "name": "alertId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "La alerta, ya atendida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Alert" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/riego/cultivo/{cropId}": {
+      "get": {
+        "tags": ["Riego"],
+        "summary": "Riegos de un cultivo, del más reciente al más antiguo",
+        "operationId": "listIrrigations",
+        "parameters": [
+          { "$ref": "#/components/parameters/cropId" },
+          { "name": "limit", "in": "query", "required": false, "description": "Cuántos devolver. Se ajusta al intervalo 1–200.", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Lista de riegos.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Irrigation" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/riego": {
+      "post": {
+        "tags": ["Riego"],
+        "summary": "Registrar un riego manual que empieza ahora",
+        "description": "Roles `ADMIN` y `FARMER`. Registra el riego; no acciona ninguna bomba.",
+        "operationId": "registerIrrigation",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IrrigationRequest" } } } },
+        "responses": {
+          "201": { "description": "Riego registrado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Irrigation" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/dashboard": {
+      "get": {
+        "tags": ["Resumen"],
+        "summary": "Resumen de todo lo del usuario",
+        "operationId": "dashboard",
+        "responses": {
+          "200": { "description": "Resumen.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Dashboard" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/dashboard/{cropId}": {
+      "get": {
+        "tags": ["Resumen"],
+        "summary": "Resumen de un cultivo",
+        "operationId": "cropDashboard",
+        "parameters": [{ "$ref": "#/components/parameters/cropId" }],
+        "responses": {
+          "200": { "description": "Resumen del cultivo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Dashboard" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/crops/{cropId}/predictions": {
+      "get": {
+        "tags": ["Predicciones"],
+        "summary": "Predicciones guardadas de un cultivo, de la más reciente a la más antigua",
+        "operationId": "listPredictions",
+        "parameters": [
+          { "$ref": "#/components/parameters/cropId" },
+          { "name": "limit", "in": "query", "required": false, "description": "Cuántas devolver. Se ajusta al intervalo 1–100.", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Lista de predicciones.", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Prediction" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "tags": ["Predicciones"],
+        "summary": "Pedir una predicción de riego para un cultivo",
+        "description": "Roles `ADMIN` y `FARMER`. Responde enseguida y sin cuerpo: la predicción se calcula con las últimas lecturas del cultivo y aparece en el historial cuando el servicio de IA contesta. Si el cultivo no tiene lecturas de humedad del suelo, o ese servicio no está configurado o no responde, no se guarda nada.",
+        "operationId": "requestPrediction",
+        "parameters": [{ "$ref": "#/components/parameters/cropId" }],
+        "responses": {
+          "202": { "description": "Petición aceptada." },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/api/ai/chat": {
+      "post": {
+        "tags": ["Asistente de IA"],
+        "summary": "Pregunta escrita al asistente",
+        "description": "La respuesta tiene en cuenta las cifras de la finca del usuario y los turnos anteriores que se envíen. Límite: 10 preguntas por minuto y usuario.",
+        "operationId": "aiChat",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiChatRequest" } } } },
+        "responses": {
+          "200": { "description": "Respuesta del asistente, en Markdown sencillo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiResponse" } } } },
+          "400": { "$ref": "#/components/responses/Validation" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "El asistente no está configurado (falta `GEMINI_API_KEY`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/api/ai/voice": {
+      "post": {
+        "tags": ["Asistente de IA"],
+        "summary": "Pregunta hablada al asistente",
+        "description": "Formulario con la grabación (`audio`), con su texto (`transcript`) o con ambos; si llega el texto, el audio no se usa. El mismo límite de consultas que la pregunta escrita.",
+        "operationId": "aiVoice",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "audio": { "type": "string", "format": "binary", "description": "WebM, Ogg, MP4, WAV, MP3, AAC o FLAC, hasta 3 MB." },
+                  "transcript": { "type": "string", "maxLength": 1000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Respuesta del asistente y lo que entendió.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AiResponse" } } } },
+          "400": { "description": "No llegó audio ni texto, o el texto es demasiado largo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "description": "El audio supera los 3 MB.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "Formato de audio no admitido, o la petición no es un formulario.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "503": { "description": "El asistente no está configurado (falta `GEMINI_API_KEY`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "parameters": {
+      "cropId": { "name": "cropId", "in": "path", "required": true, "schema": { "type": "integer" } }
+    },
+    "responses": {
+      "Validation": { "description": "Los datos enviados no son válidos. `fields` trae el mensaje de cada campo rechazado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Falta el token, o no es válido, caducó o su cuenta está desactivada.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "El rol del usuario no permite esta operación.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "El recurso no existe o pertenece a otro usuario. También cuando un identificador o `limit` no es un número.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "example": "No se encontró el recurso solicitado." },
+          "fields": { "type": "object", "additionalProperties": { "type": "string" }, "example": { "email": "El correo no es válido." } }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 255, "example": "demo@agrosense.co" },
+          "password": { "type": "string", "maxLength": 72 }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": ["token", "name", "role", "idUser"],
+        "properties": {
+          "token": { "type": "string" },
+          "name": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "farmer", "technician"] },
+          "idUser": { "type": "integer" }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["name", "lastName", "email", "password"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 18 },
+          "lastName": { "type": "string", "minLength": 2, "maxLength": 18 },
+          "email": { "type": "string", "format": "email", "minLength": 6, "maxLength": 160 },
+          "password": { "type": "string", "minLength": 8, "maxLength": 32, "description": "Los espacios cuentan." }
+        }
+      },
+      "RegisterResponse": {
+        "type": "object",
+        "required": ["idUser", "name", "lastName", "email", "role"],
+        "properties": {
+          "idUser": { "type": "integer" },
+          "name": { "type": "string" },
+          "lastName": { "type": "string" },
+          "email": { "type": "string" },
+          "role": { "type": "string", "example": "farmer" }
+        }
+      },
+      "UserCheckResponse": {
+        "type": "object",
+        "required": ["exists", "available"],
+        "properties": {
+          "exists": { "type": "boolean" },
+          "available": { "type": "boolean", "description": "Lo contrario de `exists`." }
+        }
+      },
+      "EstateRequest": {
+        "type": "object",
+        "required": ["name", "location", "areaHa"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255 },
+          "location": { "type": "string", "maxLength": 255 },
+          "latitude": { "type": "number", "minimum": -90, "maximum": 90, "description": "Solo junto con `longitude`." },
+          "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+          "areaHa": { "type": "number", "exclusiveMinimum": true, "minimum": 0, "description": "Hasta 8 enteros y 2 decimales." }
+        }
+      },
+      "Estate": {
+        "type": "object",
+        "required": ["idEstate", "name", "location", "areaHa", "createdAt"],
+        "properties": {
+          "idEstate": { "type": "integer" },
+          "name": { "type": "string" },
+          "location": { "type": "string" },
+          "latitude": { "type": "number", "nullable": true },
+          "longitude": { "type": "number", "nullable": true },
+          "areaHa": { "type": "number" },
+          "createdAt": { "type": "string", "example": "2026-10-11T10:51:19.308" }
+        }
+      },
+      "CropRequest": {
+        "type": "object",
+        "required": ["estateId", "name"],
+        "properties": {
+          "estateId": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 255 },
+          "variety": { "type": "string", "maxLength": 255 },
+          "sowingDate": { "type": "string", "format": "date" },
+          "humidityMin": { "type": "number", "minimum": 0, "maximum": 100, "description": "Hasta 2 decimales. Solo junto con `humidityMax` y menor que él." },
+          "humidityMax": { "type": "number", "minimum": 0, "maximum": 100 },
+          "tempMin": { "type": "number", "minimum": -50, "maximum": 80, "description": "Solo junto con `tempMax` y menor que él." },
+          "tempMax": { "type": "number", "minimum": -50, "maximum": 80 },
+          "phMin": { "type": "number", "minimum": 0, "maximum": 14, "description": "Solo junto con `phMax` y menor que él." },
+          "phMax": { "type": "number", "minimum": 0, "maximum": 14 }
+        }
+      },
+      "Crop": {
+        "type": "object",
+        "required": ["idCrop", "idEstate", "name", "stage", "humidityMin", "humidityMax", "tempMin", "tempMax", "phMin", "phMax", "active"],
+        "properties": {
+          "idCrop": { "type": "integer" },
+          "idEstate": { "type": "integer" },
+          "name": { "type": "string" },
+          "variety": { "type": "string", "nullable": true },
+          "sowingDate": { "type": "string", "format": "date", "nullable": true },
+          "stage": { "type": "string", "enum": ["GERMINATION", "GROWTH", "FLOWERING", "FRUITING", "RIPENING", "HARVEST"] },
+          "humidityMin": { "type": "number" },
+          "humidityMax": { "type": "number" },
+          "tempMin": { "type": "number" },
+          "tempMax": { "type": "number" },
+          "phMin": { "type": "number" },
+          "phMax": { "type": "number" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "SensorType": {
+        "type": "string",
+        "enum": ["SOIL_MOISTURE", "AIR_TEMPERATURE", "SOIL_TEMPERATURE", "PH", "CONDUCTIVITY", "LIGHT", "RAIN_GAUGE", "RELATIVE_HUMIDITY"]
+      },
+      "SensorRequest": {
+        "type": "object",
+        "required": ["cropId", "sensorType", "sensorCode"],
+        "properties": {
+          "cropId": { "type": "integer" },
+          "sensorType": { "$ref": "#/components/schemas/SensorType" },
+          "sensorCode": { "type": "string", "maxLength": 255, "example": "AS-001" },
+          "location": { "type": "string", "maxLength": 255 }
+        }
+      },
+      "Sensor": {
+        "type": "object",
+        "required": ["idSensor", "idCrop", "sensorCode", "sensorType", "active"],
+        "properties": {
+          "idSensor": { "type": "integer" },
+          "idCrop": { "type": "integer" },
+          "sensorCode": { "type": "string" },
+          "sensorType": { "$ref": "#/components/schemas/SensorType" },
+          "location": { "type": "string", "nullable": true },
+          "active": { "type": "boolean" },
+          "lastReadingAt": { "type": "string", "nullable": true, "example": "2026-10-11T10:51:19.308" }
+        }
+      },
+      "ReadingRequest": {
+        "type": "object",
+        "required": ["sensorCode", "value"],
+        "properties": {
+          "sensorCode": { "type": "string", "maxLength": 255, "example": "AS-001" },
+          "value": { "type": "number", "minimum": -99999999, "maximum": 99999999 },
+          "unit": { "type": "string", "maxLength": 20, "description": "Sin ella se usa la unidad propia del tipo de sensor." }
+        }
+      },
+      "Reading": {
+        "type": "object",
+        "required": ["idReading", "idSensor", "sensorCode", "sensorType", "value", "recordedAt"],
+        "properties": {
+          "idReading": { "type": "integer", "format": "int64" },
+          "idSensor": { "type": "integer" },
+          "sensorCode": { "type": "string" },
+          "sensorType": { "$ref": "#/components/schemas/SensorType" },
+          "value": { "type": "number" },
+          "unit": { "type": "string", "nullable": true },
+          "quality": { "type": "string", "nullable": true, "description": "`OK` cuando el valor es posible para ese tipo de sensor; otro texto cuando no, y entonces no genera alertas." },
+          "recordedAt": { "type": "string", "example": "2026-10-11T10:51:19.308" }
+        }
+      },
+      "Alert": {
+        "type": "object",
+        "required": ["idAlert", "alertType", "severity", "message", "acknowledged", "idCrop", "cropName", "createdAt"],
+        "properties": {
+          "idAlert": { "type": "integer" },
+          "alertType": { "type": "string", "enum": ["LOW_HUMIDITY", "HIGH_HUMIDITY", "HIGH_TEMPERATURE", "LOW_TEMPERATURE", "PH_OUT_OF_RANGE", "HIGH_CONDUCTIVITY", "PEST_DETECTED", "RECOMMENDED_WATERING", "WATER_STRESS"] },
+          "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "VERY_HIGH"] },
+          "message": { "type": "string" },
+          "detectedValue": { "type": "number", "nullable": true },
+          "acknowledged": { "type": "boolean" },
+          "idCrop": { "type": "integer" },
+          "cropName": { "type": "string" },
+          "createdAt": { "type": "string", "example": "2026-10-11T10:51:19.308" }
+        }
+      },
+      "IrrigationRequest": {
+        "type": "object",
+        "required": ["cropId", "waterLiters", "durationMinutes", "reason"],
+        "properties": {
+          "cropId": { "type": "integer" },
+          "waterLiters": { "type": "number", "exclusiveMinimum": true, "minimum": 0, "description": "Hasta 8 enteros y 2 decimales." },
+          "durationMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+          "reason": { "type": "string", "maxLength": 255 }
+        }
+      },
+      "Irrigation": {
+        "type": "object",
+        "required": ["idIrrigation", "idCrop", "startedAt", "type"],
+        "properties": {
+          "idIrrigation": { "type": "integer" },
+          "idCrop": { "type": "integer" },
+          "startedAt": { "type": "string", "example": "2026-10-11T10:51:19.308" },
+          "endedAt": { "type": "string", "nullable": true },
+          "durationMin": { "type": "integer", "nullable": true },
+          "waterLiters": { "type": "number", "nullable": true },
+          "type": { "type": "string", "enum": ["AUTOMATIC", "MANUAL"] },
+          "reason": { "type": "string", "nullable": true }
+        }
+      },
+      "Dashboard": {
+        "type": "object",
+        "required": ["totalCrops", "totalSensors", "pendingAlerts", "latestReadings", "activeAlerts"],
+        "properties": {
+          "totalCrops": { "type": "integer" },
+          "totalSensors": { "type": "integer" },
+          "pendingAlerts": { "type": "integer" },
+          "lastHumidity": { "type": "number", "nullable": true, "description": "Última lectura de humedad del suelo." },
+          "lastTemperature": { "type": "number", "nullable": true, "description": "Última lectura de temperatura del aire." },
+          "lastPh": { "type": "number", "nullable": true },
+          "aiRecommendation": { "type": "string", "nullable": true, "description": "Recomendación de la predicción más reciente." },
+          "latestReadings": { "type": "array", "maxItems": 10, "items": { "$ref": "#/components/schemas/Reading" } },
+          "activeAlerts": { "type": "array", "maxItems": 5, "items": { "$ref": "#/components/schemas/Alert" } }
+        }
+      },
+      "Prediction": {
+        "type": "object",
+        "required": ["idPrediction", "idCrop", "type", "createdAt"],
+        "properties": {
+          "idPrediction": { "type": "integer" },
+          "idCrop": { "type": "integer" },
+          "type": { "type": "string", "example": "IRRIGATION" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "nullable": true },
+          "recommendation": { "type": "string", "nullable": true },
+          "modelUsed": { "type": "string", "nullable": true, "example": "agrosense-riego-reglas-1.0" },
+          "createdAt": { "type": "string", "example": "2026-10-11T10:51:19.308" }
+        }
+      },
+      "AiChatRequest": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "maxLength": 1000, "example": "¿Cuándo conviene regar el café?" },
+          "history": {
+            "type": "array",
+            "maxItems": 12,
+            "description": "Turnos anteriores de la conversación, del más antiguo al más reciente.",
+            "items": {
+              "type": "object",
+              "required": ["role", "text"],
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "assistant"] },
+                "text": { "type": "string", "maxLength": 4000 }
+              }
+            }
+          }
+        }
+      },
+      "AiResponse": {
+        "type": "object",
+        "required": ["reply"],
+        "properties": {
+          "reply": { "type": "string" },
+          "transcript": { "type": "string", "description": "Lo que el asistente entendió de un mensaje de voz. No aparece en las preguntas escritas." }
+        }
+      }
+    }
+  }
+}
