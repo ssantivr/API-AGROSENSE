@@ -18,7 +18,7 @@
     { "name": "Riego" },
     { "name": "Resumen" },
     { "name": "Predicciones", "description": "Predicciones de riego del servicio IA-AGROSENSE. Sin `AI_SERVICE_URL` en el backend no se genera ninguna." },
-    { "name": "Asistente de IA", "description": "Asistente conversacional (Google Gemini). Cuando el modelo no está configurado o no responde, las preguntas escritas se contestan igualmente con los datos de la finca del usuario y la respuesta lo indica con `source: local`." }
+    { "name": "Asistente de IA", "description": "Asistente conversacional, respondido por un modelo de lenguaje (Gemini o un proveedor compatible con la API de OpenAI, según cómo esté configurado el backend). Cuando el modelo no está configurado o no responde, las preguntas escritas se contestan igualmente con los datos de la finca del usuario y la respuesta lo indica con `source: local`." }
   ],
   "security": [{ "bearerAuth": [] }],
   "paths": {
@@ -366,9 +366,9 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "502": { "description": "El modelo respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "503": { "description": "El modelo no está configurado y las respuestas con los datos de la finca están desactivadas (`AI_LOCAL_ANSWERS=false`).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "504": { "description": "El modelo no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },
@@ -400,9 +400,9 @@
           "415": { "description": "Formato de audio no admitido, o la petición no es un formulario.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "422": { "description": "El modelo se negó a responder esa consulta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "429": { "description": "Demasiadas consultas seguidas.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "502": { "description": "Gemini respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "502": { "description": "El modelo respondió con un error o sin texto.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "503": { "description": "Llegó una grabación sin texto y el modelo, que es quien la escucha, no está configurado.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "504": { "description": "Gemini no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+          "504": { "description": "El modelo no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     }

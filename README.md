@@ -72,7 +72,8 @@ producción, `https://agrosense-frontend-iota.vercel.app`).
 
 `/api/auth/email-available` es el nombre anterior de `check-user` y sigue respondiendo.
 
-El asistente (`/api/ai/*`) responde con Google Gemini. Si el modelo no está configurado o no contesta,
+El asistente (`/api/ai/*`) responde con un modelo de lenguaje: Gemini o un proveedor compatible con la
+API de OpenAI, según la llave que tenga el backend. Si el modelo no está configurado o no contesta,
 las preguntas escritas se responden igualmente con las lecturas de cada cultivo del usuario, y la
 respuesta lo dice con `"source": "local"` en lugar de `"model"`. Las predicciones de riego las calcula
 [IA-AGROSENSE](https://github.com/ssantivr/IA-AGROSENSE); el backend solo las pide si tiene
