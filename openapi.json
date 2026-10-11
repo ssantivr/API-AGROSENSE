@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "AgroSense API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "API REST del backend de AgroSense: cuentas, fincas, cultivos, sensores IoT, lecturas, alertas, riego, resumen, predicciones de riego y asistente de IA.\n\nTodas las rutas salvo las marcadas como públicas exigen la cabecera `Authorization: Bearer <token>`, con el token que devuelve `POST /api/auth/login` (JWT HS512, válido 60 minutos). Cada operación se limita a los datos del usuario del token: lo que pertenece a otra cuenta se responde como 404.\n\nLos errores tienen siempre la forma `{\"message\": \"...\"}`, con el mensaje escrito para el usuario final; los de validación añaden `fields` con el mensaje de cada campo rechazado.\n\nLas fechas con hora son locales del servidor y no llevan zona (`2026-10-11T10:51:19.308`)."
   },
   "servers": [
@@ -22,6 +22,21 @@
   ],
   "security": [{ "bearerAuth": [] }],
   "paths": {
+    "/": {
+      "get": {
+        "tags": ["Estado"],
+        "summary": "Qué servicio es este",
+        "description": "Lo que responde la dirección del servicio sin ninguna ruta, que es lo que se abre en un navegador. También responde a `HEAD`.",
+        "operationId": "index",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Nombre del servicio y dónde está su comprobación de estado y su contrato.",
+            "content": { "application/json": { "schema": { "type": "object", "required": ["service", "status", "health", "contract"], "properties": { "service": { "type": "string", "example": "AgroSense API" }, "status": { "type": "string", "example": "UP" }, "health": { "type": "string", "example": "/api/health" }, "contract": { "type": "string", "example": "https://github.com/ssantivr/API-AGROSENSE" } } } } }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "tags": ["Estado"],
@@ -327,7 +342,7 @@
       "post": {
         "tags": ["Predicciones"],
         "summary": "Pedir una predicción de riego para un cultivo",
-        "description": "Roles `ADMIN` y `FARMER`. Responde enseguida y sin cuerpo: la predicción se calcula con las últimas lecturas del cultivo y aparece en el historial cuando el servicio de IA contesta. Si el cultivo no tiene lecturas de humedad del suelo, o ese servicio no está configurado o no responde, no se guarda nada.",
+        "description": "Roles `ADMIN` y `FARMER`. Responde enseguida y sin cuerpo: la predicción se calcula con las últimas lecturas del cultivo y con sus propios límites de humedad y pH, y aparece en el historial cuando el servicio de IA contesta. Si el cultivo no tiene lecturas de humedad del suelo, o ese servicio no está configurado o no responde, no se guarda nada.",
         "operationId": "requestPrediction",
         "parameters": [{ "$ref": "#/components/parameters/cropId" }],
         "responses": {
