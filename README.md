@@ -10,6 +10,7 @@ que un backend en marcha la cumple.
 | [`openapi.json`](openapi.json) | Especificación OpenAPI 3.0 de todas las rutas, con sus datos de entrada, respuestas y errores |
 | [`requests.http`](requests.http) | Peticiones de ejemplo listas para ejecutar (REST Client de VS Code o IntelliJ) |
 | [`tools/check_contract.py`](tools/check_contract.py) | Comprueba un backend en marcha contra la especificación |
+| [`tools/validate_spec.py`](tools/validate_spec.py) | Comprueba que la especificación sea coherente consigo misma, sin necesidad de un backend |
 
 Para leer la especificación con formato, ábrela en <https://editor.swagger.io> (File → Import file).
 
@@ -44,6 +45,7 @@ producción, `https://agrosense-frontend-iota.vercel.app`).
 
 | Método y ruta | Uso | Acceso |
 |---|---|---|
+| `GET /` | Qué servicio es (lo que se ve al abrir la dirección en un navegador) | Pública |
 | `GET /api/health` | Estado del servicio | Pública |
 | `POST /api/auth/login` | Iniciar sesión | Pública |
 | `POST /api/auth/register` | Crear una cuenta (rol `farmer`) | Pública |
@@ -123,3 +125,12 @@ permitidos y campos que el contrato no conoce.
 
 Cuando cambie una ruta del backend, cambia `openapi.json` en el mismo trabajo y vuelve a ejecutar
 `check_contract.py` contra el backend con el cambio.
+
+Antes de subir un cambio de la especificación:
+
+```bash
+python tools/validate_spec.py   # referencias rotas, parámetros sin declarar, rutas protegidas sin su 401...
+python -m unittest              # las pruebas de las dos herramientas
+```
+
+GitHub ejecuta las dos cosas en cada push (`.github/workflows/tests.yml`).
