@@ -16,9 +16,9 @@ from agrosense_events.app import MAX_EVENT_BYTES, create_app
 from agrosense_events.config import Settings, from_environment
 from agrosense_events.server import ServiceServer
 
-INTERNAL_KEY = "llave-interna-de-eventos"
-STREAM_SECRET = "secreto-del-stream-de-al-menos-32-bytes"
-DEVICE_KEY = "llave-del-dispositivo"
+INTERNAL_KEY = "internal-key-of-the-events"
+STREAM_SECRET = "stream-secret-of-at-least-32-bytes"
+DEVICE_KEY = "device-key"
 OWNER = "demo@agrosense.co"
 EVENT = {"device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-16T08:00:00Z",
          "data": {"soil_moisture": 31.5, "ph": 6.4}}
@@ -115,7 +115,7 @@ def test_an_event_is_forwarded_with_both_keys_and_answered_with_what_was_stored(
 @pytest.mark.parametrize("body, expected", [
     ({**EVENT, "device_id": "x"}, "device_id"),
     ({**EVENT, "device_id": "rpi demo"}, "device_id"),
-    ({**EVENT, "type": "riego"}, "'type'"),
+    ({**EVENT, "type": "irrigation"}, "'type'"),
     ({**EVENT, "data": {}}, "'data'"),
     ({**EVENT, "data": [1, 2]}, "'data'"),
     ({**EVENT, "data": {f"m{index}": index for index in range(33)}}, "como máximo"),
@@ -159,7 +159,7 @@ def test_the_devices_own_faults_come_back_as_they_are_so_it_does_not_retry(backe
     (500, {"message": "boom"}),
     (503, {}),
     (401, {"message": "Falta la llave interna o no es válida."}),
-    (200, {"sin": "dueño"}),
+    (200, {"without": "owner"}),
 ])
 def test_a_backend_that_cannot_store_the_event_is_a_502_so_the_device_retries(backend, status, body):
     backend.answer(status, body)
@@ -198,7 +198,7 @@ def test_a_token_from_the_backend_names_the_user():
 @pytest.mark.parametrize("token", [
     "",
     "no.es.token",
-    tokens.sign(OWNER, "otro-secreto-de-al-menos-32-bytes!!"),
+    tokens.sign(OWNER, "another-secret-of-at-least-32-bytes!!"),
     tokens.sign(OWNER, STREAM_SECRET, lifetime_s=300, now=time.time() - 3600),
     tokens.sign(OWNER, STREAM_SECRET) + "x",
 ])
@@ -214,7 +214,7 @@ def test_a_token_that_names_no_algorithm_or_another_audience_is_refused():
         tokens.verify(f"{header}.{payload}.", STREAM_SECRET)
 
     good = tokens.sign(OWNER, STREAM_SECRET).split(".")
-    other = tokens._encode(json.dumps({"sub": OWNER, "aud": "otro", "exp": time.time() + 60}).encode())
+    other = tokens._encode(json.dumps({"sub": OWNER, "aud": "other", "exp": time.time() + 60}).encode())
     with pytest.raises(tokens.InvalidToken):
         tokens.verify(f"{good[0]}.{other}.{good[2]}", STREAM_SECRET)
 
@@ -326,7 +326,7 @@ def test_the_stream_token_never_reaches_the_log(live, caplog):
     with caplog.at_level(logging.INFO):
         listener = Listener(live.url, token)
         assert listener.ended.wait(5)
-        httpx.get(f"{live.url}/stream", params={"token": "adivinado"}, timeout=5)
+        httpx.get(f"{live.url}/stream", params={"token": "guessed"}, timeout=5)
         httpx.post(f"{live.url}/events", json=EVENT, headers={"X-Device-Key": DEVICE_KEY}, timeout=5)
         listener.close()
 
@@ -334,7 +334,7 @@ def test_the_stream_token_never_reaches_the_log(live, caplog):
     written = "\n".join(record.getMessage() for record in caplog.records
                         if record.name.startswith(("agrosense_events", "uvicorn")))
     assert "GET /stream 200" in written and "GET /stream 401" in written
-    for secret in (token, "adivinado", DEVICE_KEY, INTERNAL_KEY, STREAM_SECRET):
+    for secret in (token, "guessed", DEVICE_KEY, INTERNAL_KEY, STREAM_SECRET):
         assert secret not in written
 
 

@@ -54,7 +54,7 @@ def main() -> None:
     settings = from_environment()
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8100"))
-    log.info("AgroSense eventos listening on %s:%s; backend %s; internal key %s; stream %s; origins %s", host, port,
+    log.info("AgroSense event service listening on %s:%s; backend %s; internal key %s; stream %s; origins %s", host, port,
              settings.backend_url, "set" if settings.internal_key else "MISSING (events answer 502)",
              "open" if settings.stream_secret else "closed (EVENTS_STREAM_SECRET missing)",
              ", ".join(settings.allowed_origins) or "none")

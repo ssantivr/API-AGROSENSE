@@ -141,7 +141,7 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             raise Refused(400, "El cuerpo no es JSON válido.") from None
         event = check_event(body)
         if not settings.internal_key:
-            log.error("EVENTS_INTERNAL_KEY sin valor: no se puede reenviar el evento al backend")
+            log.error("EVENTS_INTERNAL_KEY is empty: the event cannot be forwarded to the backend")
             return _message(502, "El servicio de eventos no está configurado; reintenta más tarde.")
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -149,14 +149,14 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
                                            headers={"X-Internal-Key": settings.internal_key,
                                                     "X-Device-Key": device_key})
         except httpx.HTTPError as error:
-            log.warning("El backend no respondió al reenviar un evento: %s", type(error).__name__)
+            log.warning("The backend did not answer while forwarding an event: %s", type(error).__name__)
             return _message(502, "El backend no respondió; reintenta más tarde.")
         message = _backend_message(answer)
         if answer.status_code == 401 and message == BACKEND_REFUSED_US:
-            log.error("El backend rechazó la llave interna de este servicio: revisa EVENTS_INTERNAL_KEY")
+            log.error("The backend rejected this service's internal key: check EVENTS_INTERNAL_KEY")
             return _message(502, "El servicio de eventos no está configurado; reintenta más tarde.")
         if answer.status_code >= 500:
-            log.warning("El backend respondió %s a un evento", answer.status_code)
+            log.warning("The backend answered %s to an event", answer.status_code)
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         if answer.status_code != 200:
             # The device's own fault (unknown device, wrong key, bad event): retrying would not help.
@@ -167,7 +167,7 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             owner = str(stored["ownerEmail"]).strip().lower()
             delivered_event = stored["event"]
         except (ValueError, KeyError, TypeError):
-            log.warning("El backend respondió a un evento sin el dueño o sin el evento guardado")
+            log.warning("The backend answered an event without the owner or the stored event")
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         delivered = hub.publish(owner, event["type"], delivered_event)
         return Json({"status": "stored", "readings": len(delivered_event.get("readings") or []),
