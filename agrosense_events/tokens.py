@@ -1,9 +1,3 @@
-"""The short tokens the backend signs (GET /api/events/token) so a user's browser can open its stream.
-
-They are JWTs signed with HS256 and EVENTS_STREAM_SECRET, which only the backend and this service know. The
-check is written here, on the standard library, because it is a handful of lines and the format is fixed.
-"""
-
 import base64
 import hashlib
 import hmac
@@ -11,12 +5,11 @@ import json
 import time
 
 AUDIENCE = "agrosense-events"
-# Clocks of two servers are never exactly the same.
 LEEWAY_S = 30
 
 
 class InvalidToken(Exception):
-    """The token was not issued by the backend for this service, or it expired. The reason is not told."""
+    pass
 
 
 def _decode(part: str) -> bytes:
@@ -28,7 +21,6 @@ def _encode(raw: bytes) -> str:
 
 
 def verify(token: str, secret: str, now: float | None = None) -> tuple[str, float]:
-    """The e-mail the token was issued for and when it expires, in seconds since 1970."""
     if not secret or not token:
         raise InvalidToken()
     parts = token.split(".")
@@ -40,7 +32,6 @@ def verify(token: str, secret: str, now: float | None = None) -> tuple[str, floa
         signature = _decode(parts[2])
     except (ValueError, UnicodeDecodeError):
         raise InvalidToken() from None
-    # Only HS256: a token that names another algorithm, "none" included, is not one of ours.
     if not isinstance(header, dict) or header.get("alg") != "HS256":
         raise InvalidToken()
     expected = hmac.new(secret.encode("utf-8"), f"{parts[0]}.{parts[1]}".encode("ascii"), hashlib.sha256).digest()
@@ -62,7 +53,6 @@ def verify(token: str, secret: str, now: float | None = None) -> tuple[str, floa
 
 
 def sign(email: str, secret: str, lifetime_s: int = 300, now: float | None = None) -> str:
-    """A token like the backend's; used by the tests and the local tools."""
     issued = int(time.time() if now is None else now)
     header = _encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
     payload = _encode(json.dumps({"sub": email, "aud": [AUDIENCE], "iat": issued,

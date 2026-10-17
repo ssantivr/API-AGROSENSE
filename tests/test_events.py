@@ -1,5 +1,3 @@
-"""The event service with the backend played by a local HTTP server, and the streams over real HTTP."""
-
 import json
 import logging
 import socket
@@ -29,8 +27,6 @@ STORED = {"ownerEmail": OWNER, "event": {"type": "reading", "deviceId": "RPI-DEM
 
 
 class FakeBackend:
-    """The backend's POST /api/internal/events: records what it receives and answers what it is told."""
-
     def __init__(self):
         self.requests: list[dict] = []
         self.status, self.body, self.delay = 200, STORED, 0.0
@@ -95,8 +91,6 @@ def closed_port() -> int:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
 
-
-# --- POST /events ------------------------------------------------------------------------------------------
 
 def test_an_event_is_forwarded_with_both_keys_and_answered_with_what_was_stored(backend):
     client = TestClient(create_app(settings_for(backend.url)))
@@ -186,8 +180,6 @@ def test_without_its_internal_key_the_service_does_not_forward_anything(backend)
     assert backend.requests == []
 
 
-# --- Tokens of the stream ----------------------------------------------------------------------------------
-
 def test_a_token_from_the_backend_names_the_user():
     email, expires = tokens.verify(tokens.sign("Demo@AgroSense.co", STREAM_SECRET), STREAM_SECRET)
 
@@ -228,11 +220,7 @@ def test_the_stream_refuses_a_bad_token_and_a_service_without_secret(backend):
     assert closed.get("/stream", params={"token": tokens.sign(OWNER, STREAM_SECRET)}).status_code == 401
 
 
-# --- Live delivery, over real HTTP -------------------------------------------------------------------------
-
 class Listener:
-    """A browser's EventSource: reads the stream in a thread and keeps the events it receives."""
-
     def __init__(self, url: str, token: str):
         self.events: list[tuple[str, dict]] = []
         self.status = None
@@ -330,15 +318,12 @@ def test_the_stream_token_never_reaches_the_log(live, caplog):
         httpx.post(f"{live.url}/events", json=EVENT, headers={"X-Device-Key": DEVICE_KEY}, timeout=5)
         listener.close()
 
-    # What the service writes; the test's own client (the browser here) logs its URLs under "httpx".
     written = "\n".join(record.getMessage() for record in caplog.records
                         if record.name.startswith(("agrosense_events", "uvicorn")))
     assert "GET /stream 200" in written and "GET /stream 401" in written
     for secret in (token, "guessed", DEVICE_KEY, INTERNAL_KEY, STREAM_SECRET):
         assert secret not in written
 
-
-# --- The rest ----------------------------------------------------------------------------------------------
 
 def test_health_is_open_and_only_the_frontend_may_read_the_stream_from_a_browser(backend):
     client = TestClient(create_app(settings_for(backend.url)))

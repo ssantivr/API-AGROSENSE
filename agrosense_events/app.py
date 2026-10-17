@@ -1,13 +1,3 @@
-"""AgroSense's event service: the webhook field devices send their events to, and the live stream of each user.
-
-    GET  /health          -> {"status": "UP"}
-    POST /events          -> an event from a device (X-Device-Key); forwarded to the backend, which stores it
-    GET  /stream?token=   -> the signed-in user's events as they arrive (Server-Sent Events)
-
-It never touches the database: the backend checks the device's key, stores the event and says whose it is,
-and this service delivers it to that user's open streams only.
-"""
-
 import asyncio
 import json
 import logging
@@ -31,7 +21,6 @@ MAX_EVENT_BYTES = 16 * 1024
 MAX_MEASUREMENTS = 32
 EVENT_TYPES = ("reading", "alert")
 DEVICE_ID = re.compile(r"[A-Za-z0-9_-]{3,64}")
-# What the backend answers when this service's own key is wrong: a fault here, not the device's.
 BACKEND_REFUSED_US = "Falta la llave interna o no es válida."
 
 
@@ -50,7 +39,6 @@ def _message(status: int, message: str, **headers: str) -> Json:
 
 
 def check_event(body: object) -> dict:
-    """The event in the shape the backend expects; each refusal names the field to fix."""
     if not isinstance(body, dict):
         raise Refused(400, "El cuerpo debe ser un objeto JSON.")
     device_id = body.get("device_id")
@@ -86,7 +74,6 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
         response = await call_next(request)
         response.headers.setdefault("Cache-Control", "no-store")
         response.headers["X-Content-Type-Options"] = "nosniff"
-        # The path only: the stream's token travels in the query string and must not reach the log.
         access_log.info("%s %s %s %.0fms", request.method, request.url.path, response.status_code,
                         (time.monotonic() - started) * 1000)
         return response
@@ -159,7 +146,6 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             log.warning("The backend answered %s to an event", answer.status_code)
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         if answer.status_code != 200:
-            # The device's own fault (unknown device, wrong key, bad event): retrying would not help.
             return _message(answer.status_code if answer.status_code in (400, 401, 403, 404, 409) else 400,
                             message or "El backend rechazó el evento.")
         try:
@@ -186,20 +172,17 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
 
         async def events():
             try:
-                # The browser waits this long before reconnecting after a dropped connection.
                 yield b"retry: 5000\n\n"
                 yield sse("ready", {"expiresAt": int(expires)})
                 while True:
                     left = expires - time.time()
                     if left <= 0:
-                        # The token is spent: the browser opens a new stream with a fresh one.
                         yield sse("expired", {})
                         return
                     try:
                         kind, event = await asyncio.wait_for(queue.get(), timeout=min(settings.heartbeat_s, left))
                         yield sse(kind, event)
                     except asyncio.TimeoutError:
-                        # A comment line keeps proxies from closing a quiet connection.
                         yield b": ping\n\n"
             finally:
                 hub.close(email, queue)

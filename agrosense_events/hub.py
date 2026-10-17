@@ -1,5 +1,3 @@
-"""Who is listening: the open streams of each user, and delivering an event to that user's streams only."""
-
 import asyncio
 from collections import defaultdict
 
@@ -9,10 +7,6 @@ class TooManyStreams(Exception):
 
 
 class Hub:
-    """Kept in memory: run the service as a single process, or the streams of one process miss the
-    events another one receives."""
-
-    # Events waiting for a slow browser; beyond this the oldest are dropped instead of using memory.
     QUEUE_SIZE = 100
 
     def __init__(self, max_per_user: int, max_total: int):
@@ -36,7 +30,6 @@ class Hub:
             del self._streams[email]
 
     def publish(self, email: str, kind: str, event: dict) -> int:
-        """Puts the event on every stream of that user; returns how many got it."""
         streams = self._streams.get(email, set())
         for queue in streams:
             if queue.full():

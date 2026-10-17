@@ -1,19 +1,13 @@
-"""Settings of the event service, read once from the environment. No secret has a default or is logged."""
-
 import os
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Settings:
-    # Where the backend is, and the key it asks of this service in X-Internal-Key.
     backend_url: str = "http://localhost:9000"
     internal_key: str = ""
-    # Shared with the backend only: it signs the tokens that open a user's live stream.
     stream_secret: str = ""
-    # Browser origins allowed to open the stream (the frontend's address).
     allowed_origins: tuple[str, ...] = ()
-    # A free host puts the backend to sleep; the first call after a while waits for it to start.
     backend_timeout_ms: int = 30000
     heartbeat_s: float = 15.0
     max_streams_per_user: int = 5
