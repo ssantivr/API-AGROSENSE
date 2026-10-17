@@ -1,0 +1,64 @@
+"""Runs the service with uvicorn: ``python -m agrosense_events`` in production and ``ServiceServer`` in tests."""
+
+import logging
+import os
+import socket
+import threading
+
+import uvicorn
+
+from .app import create_app
+from .config import from_environment
+
+log = logging.getLogger("agrosense_events")
+
+
+class ServiceServer:
+    """The app on a socket of its own, started and stopped from another thread (used by the tests)."""
+
+    def __init__(self, app, host: str = "127.0.0.1", port: int = 0):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.bind((host, port))
+        # Listening before the server starts, so a client that connects right away waits instead of failing.
+        self.socket.listen(128)
+        self.port = self.socket.getsockname()[1]
+        self.url = f"http://{host}:{self.port}"
+        self.server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", access_log=False,
+                                                    server_header=False))
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        try:
+            self.server.run(sockets=[self.socket])
+        finally:
+            self._stopped.set()
+
+    def start(self) -> "ServiceServer":
+        self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self.server.should_exit = True
+        # Open streams would otherwise hold the shutdown until they end.
+        self.server.force_exit = True
+        self._stopped.wait(10)
+        self.socket.close()
+
+
+def main() -> None:
+    logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # httpx logs every URL it calls; only the backend's address would appear, but nothing is lost by quiet.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    settings = from_environment()
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "8100"))
+    log.info("AgroSense eventos listening on %s:%s; backend %s; internal key %s; stream %s; origins %s", host, port,
+             settings.backend_url, "set" if settings.internal_key else "MISSING (events answer 502)",
+             "open" if settings.stream_secret else "closed (EVENTS_STREAM_SECRET missing)",
+             ", ".join(settings.allowed_origins) or "none")
+    # uvicorn's own access log writes the query string, where the stream's token travels: it is off, and
+    # the app logs method, path and status instead.
+    uvicorn.run(create_app(settings), host=host, port=port, log_level="info", access_log=False,
+                server_header=False, proxy_headers=False, workers=1)
