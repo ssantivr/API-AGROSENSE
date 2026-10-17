@@ -14,8 +14,6 @@ SPEC = json.loads((ROOT / "openapi.json").read_text(encoding="utf-8"))
 
 
 class ContractFileTests(unittest.TestCase):
-    """The contract as it is in the repository, and the mistakes the validator must catch in it."""
-
     def broken(self, change) -> list[str]:
         spec = copy.deepcopy(SPEC)
         change(spec)
@@ -61,8 +59,6 @@ class ContractFileTests(unittest.TestCase):
 
 
 class AnswerCheckTests(unittest.TestCase):
-    """How check_contract.py compares an answer of the backend with its schema."""
-
     PREDICTION = {"idPrediction": 3, "idCrop": 1, "type": "IRRIGATION", "confidence": 0.95,
                   "recommendation": "Riega ahora.", "modelUsed": "agrosense-riego-reglas-1.0",
                   "createdAt": "2026-10-11T10:51:19.308"}

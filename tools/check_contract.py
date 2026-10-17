@@ -1,18 +1,3 @@
-"""Checks a running AgroSense backend against openapi.json. Standard library only.
-
-    python tools/check_contract.py
-
-    API_BASE_URL   where the backend is (default http://localhost:9000)
-    API_EMAIL      an account to sign in with; without it only the public routes are checked
-    API_PASSWORD   its password
-    API_WAKE_S     how long to wait for a sleeping backend to answer /api/health (default 240)
-
-It changes nothing: routes that create or modify data are called with data the backend must refuse
-(an empty body, or an identifier that does not exist), which still proves the route is there and answers
-as documented. Every answer must carry a status the contract lists for that operation, and every 2xx body
-must match its schema.
-"""
-
 import json
 import os
 import sys
@@ -29,7 +14,6 @@ PASSWORD = os.environ.get("API_PASSWORD", "")
 TIMEOUT_S = float(os.environ.get("API_TIMEOUT_S", "30"))
 WAKE_S = float(os.environ.get("API_WAKE_S", "240"))
 
-# What the backend answers when no route matches, as opposed to "that record does not exist".
 NO_ROUTE_MESSAGE = "La solicitud no es válida."
 MISSING_ID = 999_999_999
 METHODS = ("get", "post", "put", "patch", "delete")
@@ -53,7 +37,6 @@ def resolve(node: dict) -> dict:
 
 
 def mismatches(value: object, schema: dict, where: str = "body") -> list[str]:
-    """Why the value does not fit the schema; empty when it does."""
     schema = resolve(schema)
     if value is None:
         return [] if schema.get("nullable") else [f"{where} is null"]
@@ -84,7 +67,6 @@ def mismatches(value: object, schema: dict, where: str = "body") -> list[str]:
 
 
 def call(method: str, path: str, token: str | None = None, body: object = None, form: bool = False):
-    """Returns (status, decoded JSON body or None); status 0 means the backend gave no answer."""
     headers = {"Accept": "application/json"}
     data = None
     if form:
@@ -104,7 +86,6 @@ def call(method: str, path: str, token: str | None = None, body: object = None, 
     except urllib.error.HTTPError as error:
         status, raw = error.code, error.read()
     except OSError:
-        # Refused, unreachable or timed out (urllib's own errors are OSErrors too).
         return 0, None
     try:
         return status, json.loads(raw.decode("utf-8")) if raw else None
@@ -136,7 +117,6 @@ def main() -> int:
     operations = [(path, method, item[method]) for path, item in SPEC["paths"].items()
                   for method in METHODS if method in item]
 
-    # A backend on a free plan sleeps when idle and takes a minute or two to start answering.
     deadline = time.monotonic() + WAKE_S
     while call("get", "/api/health")[0] != 200:
         if time.monotonic() >= deadline:

@@ -1,12 +1,3 @@
-"""Checks that openapi.json is consistent with itself. Standard library only, no backend needed.
-
-    python tools/validate_spec.py
-
-It does not replace check_contract.py, which compares the contract with a running backend; this one
-catches the mistakes made while editing the file: a reference to a schema that does not exist, a path
-parameter nobody declared, a protected route without its 401, a required field missing from its schema.
-"""
-
 import json
 import re
 import sys
@@ -17,7 +8,6 @@ METHODS = ("get", "post", "put", "patch", "delete")
 
 
 def problems_in(spec: dict) -> list[str]:
-    """Everything wrong with the contract; empty when it is consistent."""
     found = []
 
     def resolve(reference: str):
