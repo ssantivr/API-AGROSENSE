@@ -112,10 +112,15 @@ def check(operation: dict, name: str, status: int, body: object, expected: tuple
     report(not problems, f"{name} -> {status}", "; ".join(problems[:4]))
 
 
+def backend_operations(spec: dict) -> list[tuple[str, str, dict]]:
+    """Every operation of the backend; a path with its own servers lives in another service (the AI)."""
+    return [(path, method, item[method]) for path, item in spec["paths"].items() if "servers" not in item
+            for method in METHODS if method in item]
+
+
 def main() -> int:
     print(f"Contract: {SPEC['info']['title']} {SPEC['info']['version']}  Backend: {BASE_URL}")
-    operations = [(path, method, item[method]) for path, item in SPEC["paths"].items()
-                  for method in METHODS if method in item]
+    operations = backend_operations(SPEC)
 
     deadline = time.monotonic() + WAKE_S
     while call("get", "/api/health")[0] != 200:

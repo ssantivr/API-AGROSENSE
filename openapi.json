@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "AgroSense API",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "API REST del backend de AgroSense: cuentas, fincas, cultivos, sensores IoT, lecturas, alertas, riego, resumen, predicciones de riego y asistente de IA.\n\nTodas las rutas salvo las marcadas como públicas exigen la cabecera `Authorization: Bearer <token>`, con el token que devuelve `POST /api/auth/login` (JWT HS512, válido 60 minutos). Cada operación se limita a los datos del usuario del token: lo que pertenece a otra cuenta se responde como 404.\n\nLos errores tienen siempre la forma `{\"message\": \"...\"}`, con el mensaje escrito para el usuario final; los de validación añaden `fields` con el mensaje de cada campo rechazado.\n\nLas fechas con hora son locales del servidor y no llevan zona (`2026-10-11T10:51:19.308`)."
   },
   "servers": [
@@ -18,7 +18,8 @@
     { "name": "Riego" },
     { "name": "Resumen" },
     { "name": "Predicciones", "description": "Predicciones de riego del servicio IA-AGROSENSE. Sin `AI_SERVICE_URL` en el backend no se genera ninguna." },
-    { "name": "Asistente de IA", "description": "Asistente conversacional, respondido por un modelo de lenguaje (Gemini o un proveedor compatible con la API de OpenAI, según cómo esté configurado el backend). Cuando el modelo no está configurado o no responde, las preguntas escritas se contestan igualmente con los datos de la finca del usuario y la respuesta lo indica con `source: local`." }
+    { "name": "Asistente de IA", "description": "Asistente conversacional, respondido por un modelo de lenguaje (Gemini o un proveedor compatible con la API de OpenAI, según cómo esté configurado el backend). Cuando el modelo no está configurado o no responde, las preguntas escritas se contestan igualmente con los datos de la finca del usuario y la respuesta lo indica con `source: local`." },
+    { "name": "Servicio de IA (interno)", "description": "Rutas del servicio IA-AGROSENSE, no del backend: tienen su propia dirección (`servers` de cada ruta) y su propia llave, `X-Internal-Key` (`INTERNAL_API_KEY`). Las llama el backend o una herramienta interna, nunca el navegador. `check_contract.py` no las comprueba, porque comprueba el backend." }
   ],
   "security": [{ "bearerAuth": [] }],
   "paths": {
@@ -405,11 +406,34 @@
           "504": { "description": "El modelo no respondió a tiempo.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
+    },
+    "/analizar": {
+      "servers": [
+        { "url": "https://ia-agrosense.onrender.com", "description": "Servicio de IA en producción (Render, plan gratuito: se duerme tras un rato sin uso)." },
+        { "url": "http://localhost:8000", "description": "Servicio de IA en local" }
+      ],
+      "post": {
+        "tags": ["Servicio de IA (interno)"],
+        "summary": "Analizar una lectura: si hace falta actuar y qué hacer",
+        "description": "Aplica a una lectura, en la forma en que la envía la Raspberry, las mismas reglas de riego que `POST /predict/irrigation` del servicio de IA, y devuelve solo la alerta y la recomendación. Solo `humedad_suelo` es obligatoria; `humedad_aire` se valida pero ninguna regla la usa todavía. Sin `humidity_min` y `humidity_max` se usa el rango por defecto del backend, 40–80 %.\n\n`alerta` es `true` cuando hay que actuar: humedad por debajo del mínimo (regar) o por encima del máximo (revisar el drenaje), o riesgo de helada (≤ 2 °C). Un riego corto preventivo por calor no es una alerta. La IA no guarda nada: guardar la alerta es cosa del backend.\n\nSi el servicio no tiene `INTERNAL_API_KEY` ni `AI_SERVICE_TOKEN`, responde sin pedir llave (solo en local).",
+        "operationId": "analyzeReading",
+        "security": [{ "internalKey": [] }, { "serviceToken": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalysisRequest" } } } },
+        "responses": {
+          "200": { "description": "Alerta y recomendación.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalysisResponse" } } } },
+          "400": { "description": "Falta `humedad_suelo`, una medida no es un número o está fuera de rango, o `datos` trae otra medida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Falta la llave del servicio o no es válida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "413": { "description": "El cuerpo supera los 16 kB.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "415": { "description": "El cuerpo no es `application/json`.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
     }
   },
   "components": {
     "securitySchemes": {
-      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" },
+      "internalKey": { "type": "apiKey", "in": "header", "name": "X-Internal-Key", "description": "Llave del servicio de IA (`INTERNAL_API_KEY`), la misma que el backend tiene en `AI_SERVICE_KEY`." },
+      "serviceToken": { "type": "http", "scheme": "bearer", "description": "Token anterior del servicio de IA (`AI_SERVICE_TOKEN`), aceptado mientras dura la migración a `X-Internal-Key`." }
     },
     "parameters": {
       "cropId": { "name": "cropId", "in": "path", "required": true, "schema": { "type": "integer" } }
@@ -679,6 +703,35 @@
           "reply": { "type": "string" },
           "source": { "type": "string", "enum": ["model", "local"], "description": "`model` cuando respondió el modelo de lenguaje; `local` cuando respondió el servicio por su cuenta con los datos de la finca." },
           "transcript": { "type": "string", "description": "Lo que el asistente entendió de un mensaje de voz. No aparece en las preguntas escritas." }
+        }
+      },
+      "AnalysisRequest": {
+        "type": "object",
+        "required": ["datos"],
+        "description": "Una lectura como la envía la Raspberry al webhook. `deviceId` y `timestamp` se aceptan y no se usan.",
+        "properties": {
+          "deviceId": { "type": "string", "example": "RPI-DEMO-01" },
+          "timestamp": { "type": "string", "example": "2026-10-20T10:00:00Z" },
+          "datos": {
+            "type": "object",
+            "required": ["humedad_suelo"],
+            "additionalProperties": false,
+            "properties": {
+              "humedad_suelo": { "type": "number", "minimum": 0, "maximum": 100, "description": "%", "example": 31.5 },
+              "temperatura": { "type": "number", "minimum": -50, "maximum": 80, "description": "Temperatura del aire, °C", "example": 24.5 },
+              "humedad_aire": { "type": "number", "minimum": 0, "maximum": 100, "description": "%", "example": 60 }
+            }
+          },
+          "humidity_min": { "type": "number", "minimum": 0, "maximum": 100, "description": "Mínimo de humedad del suelo del cultivo. Junto con `humidity_max`, y menor que él." },
+          "humidity_max": { "type": "number", "minimum": 0, "maximum": 100, "description": "Máximo de humedad del suelo del cultivo." }
+        }
+      },
+      "AnalysisResponse": {
+        "type": "object",
+        "required": ["alerta", "recomendacion"],
+        "properties": {
+          "alerta": { "type": "boolean", "description": "`true` cuando hay que actuar." },
+          "recomendacion": { "type": "string", "example": "Riega ahora durante unos 53 minutos: la humedad del suelo (31.5 %) está por debajo del mínimo del cultivo (40 %)." }
         }
       }
     }

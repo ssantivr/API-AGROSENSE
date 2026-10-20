@@ -5,6 +5,8 @@
 @baseUrl = https://backend-agrosense-u5mz.onrender.com
 @email = demo@agrosense.co
 @password = {{$processEnv AGROSENSE_PASSWORD}}
+# Servicio de IA (no el backend), para POST /analizar; su llave sale de AGROSENSE_IA_KEY.
+@iaUrl = http://localhost:8000
 
 ### Estado del servicio (pública)
 GET {{baseUrl}}/api/health
@@ -82,3 +84,10 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "message": "¿Cuándo conviene regar el café?", "history": [] }
+
+### Servicio de IA, no el backend: analizar una lectura (responde {"alerta", "recomendacion"})
+POST {{iaUrl}}/analizar
+X-Internal-Key: {{$processEnv AGROSENSE_IA_KEY}}
+Content-Type: application/json
+
+{ "deviceId": "RPI-DEMO-01", "datos": { "temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 28 } }

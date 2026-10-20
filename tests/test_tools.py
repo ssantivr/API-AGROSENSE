@@ -68,6 +68,18 @@ class AnswerCheckTests(unittest.TestCase):
 
     def test_an_answer_that_fits_has_no_mismatches(self):
         self.assertEqual(self.check(self.PREDICTION, "Prediction"), [])
+
+    def test_an_analysis_of_the_ai_service_fits_its_schema_and_needs_both_fields(self):
+        self.assertEqual(self.check({"alerta": True, "recomendacion": "Riega ahora."}, "AnalysisResponse"), [])
+        self.assertTrue(self.check({"alerta": "sí", "recomendacion": "Riega ahora."}, "AnalysisResponse"))
+        self.assertTrue(self.check({"recomendacion": "Riega ahora."}, "AnalysisResponse"))
+
+    def test_the_routes_of_the_ai_service_are_not_checked_against_the_backend(self):
+        paths = {path for path, _, _ in check_contract.backend_operations(SPEC)}
+
+        self.assertNotIn("/analizar", paths)
+        self.assertIn("/api/crops/{cropId}/predictions", paths)
+        self.assertEqual(SPEC["paths"]["/analizar"]["servers"][1]["url"], "http://localhost:8000")
         self.assertEqual(self.check(dict(self.PREDICTION, confidence=None, recommendation=None), "Prediction"), [])
 
     def test_missing_wrong_and_unknown_fields_are_reported(self):

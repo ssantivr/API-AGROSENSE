@@ -79,6 +79,12 @@ respuesta lo dice con `"source": "local"` en lugar de `"model"`. Las prediccione
 [IA-AGROSENSE](https://github.com/ssantivr/IA-AGROSENSE); el backend solo las pide si tiene
 `AI_SERVICE_URL`.
 
+El contrato también describe `POST /analizar`, una ruta del **servicio de IA**, no del backend: tiene su
+propia dirección (`servers` de la ruta, `http://localhost:8000` en local) y su propia llave,
+`X-Internal-Key`. Recibe una lectura como la envía la Raspberry (`{"datos": {"humedad_suelo", "temperatura",
+"humedad_aire"}}`) y responde `{"alerta", "recomendacion"}` con las reglas de riego. `check_contract.py`
+no la comprueba, porque comprueba el backend.
+
 Los parámetros `limit` no se rechazan cuando se pasan de su máximo: se ajustan a él.
 
 ## Errores
