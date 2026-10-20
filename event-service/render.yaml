@@ -1,0 +1,21 @@
+# Render blueprint: New > Blueprint > the API-AGROSENSE repository, Blueprint Path event-service/render.yaml,
+# creates the service from this folder's Dockerfile.
+# EVENTS_INTERNAL_KEY and EVENTS_STREAM_SECRET must hold the same values as in the backend: set them by hand.
+services:
+  - type: web
+    name: eventos-agrosense
+    runtime: docker
+    rootDir: event-service
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: BACKEND_URL
+        value: https://backend-agrosense-u5mz.onrender.com
+      - key: EVENTS_ALLOWED_ORIGINS
+        value: https://agrosense-frontend-iota.vercel.app
+      - key: EVENTS_INTERNAL_KEY
+        sync: false
+      - key: EVENTS_STREAM_SECRET
+        sync: false
+      - key: BACKEND_TIMEOUT_MS
+        value: "60000"

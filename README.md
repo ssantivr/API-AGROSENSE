@@ -11,6 +11,7 @@ que un backend en marcha la cumple.
 | [`requests.http`](requests.http) | Peticiones de ejemplo listas para ejecutar (REST Client de VS Code o IntelliJ) |
 | [`tools/check_contract.py`](tools/check_contract.py) | Comprueba un backend en marcha contra la especificación |
 | [`tools/validate_spec.py`](tools/validate_spec.py) | Comprueba que la especificación sea coherente consigo misma, sin necesidad de un backend |
+| [`event-service/`](event-service/README.md) | El manejador de eventos (Python, FastAPI): el webhook que llaman las Raspberry Pi (`POST /events` o `/webhook/eventos`), que reenvía cada evento al backend y lo empuja en vivo al navegador del dueño (SSE). Es un servicio propio, con su `Dockerfile` y sus pruebas |
 
 Para leer la especificación con formato, ábrela en <https://editor.swagger.io> (File → Import file).
 
@@ -135,4 +136,5 @@ python tools/validate_spec.py   # referencias rotas, parámetros sin declarar, r
 python -m unittest              # las pruebas de las dos herramientas
 ```
 
-GitHub ejecuta las dos cosas en cada push (`.github/workflows/tests.yml`).
+GitHub ejecuta las dos cosas en cada push (`.github/workflows/tests.yml`), y también las pruebas del
+manejador de eventos (`cd event-service && pip install -r requirements-dev.txt && python -m pytest`).

@@ -14,3 +14,18 @@ jobs:
         run: python tools/validate_spec.py
       - name: Tests of the tools
         run: python -m unittest
+
+  event-service:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: event-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -r requirements-dev.txt
+      - name: Event service tests
+        run: python -m pytest
