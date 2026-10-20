@@ -30,6 +30,7 @@ class FakeBackend:
     def __init__(self):
         self.requests: list[dict] = []
         self.status, self.body, self.delay = 200, STORED, 0.0
+        self.queued: list[tuple[int, dict]] = []
         backend = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -39,9 +40,10 @@ class FakeBackend:
                                          "headers": {k.lower(): v for k, v in self.headers.items()}})
                 if backend.delay:
                     time.sleep(backend.delay)
-                payload = json.dumps(backend.body).encode("utf-8")
+                status, body = backend.queued.pop(0) if backend.queued else (backend.status, backend.body)
+                payload = json.dumps(body).encode("utf-8")
                 try:
-                    self.send_response(backend.status)
+                    self.send_response(status)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
@@ -60,6 +62,10 @@ class FakeBackend:
     def answer(self, status, body, delay=0.0):
         self.status, self.body, self.delay = status, body, delay
 
+    def answer_in_turn(self, *answers):
+        """The first requests get these (status, body) answers; the ones after, the usual answer."""
+        self.queued = list(answers)
+
     def close(self):
         self.server.shutdown()
         self.server.server_close()
@@ -74,7 +80,8 @@ def backend():
 
 def settings_for(backend_url: str, **overrides) -> Settings:
     values = {"backend_url": backend_url, "internal_key": INTERNAL_KEY, "stream_secret": STREAM_SECRET,
-              "allowed_origins": ("http://localhost:8080",), "backend_timeout_ms": 2000, "heartbeat_s": 0.2}
+              "allowed_origins": ("http://localhost:8080",), "backend_timeout_ms": 2000, "backend_retry_first_ms": 10,
+              "heartbeat_s": 0.2}
     values.update(overrides)
     return Settings(**values)
 
@@ -171,6 +178,125 @@ def test_a_backend_that_is_down_or_too_slow_is_a_502(backend):
     backend.answer(200, STORED, delay=1.0)
     slow = TestClient(create_app(settings_for(backend.url, backend_timeout_ms=200)))
     assert send(slow).status_code == 502
+
+
+SPANISH_EVENT = {"deviceId": "RPI-DEMO-01", "timestamp": "2026-10-20T10:00:00Z",
+                 "datos": {"temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 41}}
+
+
+def test_the_spanish_form_reaches_the_backend_in_the_services_own_form(backend):
+    response = send(TestClient(create_app(settings_for(backend.url))), SPANISH_EVENT)
+
+    assert response.status_code == 200
+    assert backend.requests[0]["json"] == {
+        "device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-20T10:00:00Z",
+        "data": {"air_temperature": 24.5, "relative_humidity": 60, "soil_moisture": 41}}
+
+
+def test_the_spanish_form_without_a_time_is_stamped_by_the_backend_on_arrival(backend):
+    body = {"deviceId": "RPI-DEMO-01", "datos": {"temperatura": 25, "humedad_suelo": 40}}
+
+    assert send(TestClient(create_app(settings_for(backend.url))), body).status_code == 200
+    assert backend.requests[0]["json"]["ts"] is None
+
+
+@pytest.mark.parametrize("body, expected", [
+    ({**SPANISH_EVENT, "datos": {"lluvia": 3}}, "temperatura, humedad_aire, humedad_suelo"),
+    ({**SPANISH_EVENT, "datos": {}}, "'datos'"),
+    ({**SPANISH_EVENT, "data": {"ph": 6}}, "un solo formato"),
+    ({**SPANISH_EVENT, "deviceId": "x"}, "device_id"),
+])
+def test_a_malformed_spanish_event_is_refused_without_reaching_the_backend(backend, body, expected):
+    response = send(TestClient(create_app(settings_for(backend.url))), body)
+
+    assert response.status_code == 400
+    assert expected in response.json()["message"]
+    assert backend.requests == []
+
+
+def test_the_webhook_path_and_the_x_api_key_header_are_the_same_as_events_and_x_device_key(backend):
+    client = TestClient(create_app(settings_for(backend.url)))
+
+    response = client.post("/webhook/eventos", json=SPANISH_EVENT, headers={"X-API-KEY": DEVICE_KEY})
+
+    assert response.status_code == 200
+    assert backend.requests[0]["headers"]["x-device-key"] == DEVICE_KEY
+    assert "x-api-key" not in backend.requests[0]["headers"]
+    same = client.post("/events", json=EVENT, headers={"X-API-KEY": DEVICE_KEY, "X-Device-Key": DEVICE_KEY})
+    assert same.status_code == 200
+    both = client.post("/events", json=EVENT, headers={"X-API-KEY": "one", "X-Device-Key": "other"})
+    assert both.status_code == 400
+    assert len(backend.requests) == 2
+
+
+def test_a_backend_that_stored_nothing_is_tried_again_after_a_growing_wait(backend):
+    backend.answer_in_turn((503, {}), (502, {}), (500, {"message": "boom"}))
+    started = time.monotonic()
+
+    response = send(TestClient(create_app(settings_for(backend.url, backend_retry_first_ms=100))))
+
+    assert response.status_code == 200
+    assert len(backend.requests) == 4
+    assert time.monotonic() - started >= 0.1 + 0.2 + 0.4
+
+
+def test_after_three_retries_the_device_gets_a_502_and_keeps_the_event(backend):
+    backend.answer(503, {})
+
+    response = send(TestClient(create_app(settings_for(backend.url))))
+
+    assert response.status_code == 502
+    assert len(backend.requests) == 4
+
+
+def test_retries_follow_the_environment(backend):
+    backend.answer(503, {})
+
+    send(TestClient(create_app(settings_for(backend.url, backend_retries=0))))
+
+    assert len(backend.requests) == 1
+
+
+@pytest.mark.parametrize("status, body", [
+    (400, {"message": "Medida desconocida"}),
+    (401, {"message": "Dispositivo desconocido o llave incorrecta."}),
+    (401, {"message": "Falta la llave interna o no es válida."}),
+    (409, {"message": "El sensor está inactivo."}),
+])
+def test_an_answer_that_a_retry_would_not_change_is_not_retried(backend, status, body):
+    backend.answer(status, body)
+
+    send(TestClient(create_app(settings_for(backend.url))))
+
+    assert len(backend.requests) == 1
+
+
+def test_a_backend_that_times_out_while_answering_is_not_retried_because_it_may_have_stored_it(backend):
+    backend.answer(200, STORED, delay=0.5)
+
+    response = send(TestClient(create_app(settings_for(backend.url, backend_timeout_ms=200))))
+
+    assert response.status_code == 502
+    assert len(backend.requests) == 1
+
+
+def test_each_event_and_each_failure_is_logged_without_the_keys(backend, caplog):
+    client = TestClient(create_app(settings_for(backend.url)))
+    with caplog.at_level(logging.INFO, logger="agrosense_events"):
+        send(client, SPANISH_EVENT)
+        backend.answer(401, {"message": "Dispositivo desconocido o llave incorrecta."})
+        send(client)
+        backend.answer(503, {})
+        send(client)
+
+    written = "\n".join(record.getMessage() for record in caplog.records)
+    assert "Event received from RPI-DEMO-01: reading with 3 value(s)" in written
+    assert "Event from RPI-DEMO-01 stored: 2 reading(s), 0 alert(s), delivered to 0 stream(s)" in written
+    assert "Event refused: 401 Dispositivo desconocido o llave incorrecta." in written
+    assert "Event from RPI-DEMO-01: the backend answered 503, attempt 1 of 4" in written
+    assert "Event from RPI-DEMO-01: the backend answered 503" in written.splitlines()
+    for secret in (DEVICE_KEY, INTERNAL_KEY):
+        assert secret not in written
 
 
 def test_without_its_internal_key_the_service_does_not_forward_anything(backend):
@@ -338,10 +464,14 @@ def test_health_is_open_and_only_the_frontend_may_read_the_stream_from_a_browser
 
 def test_settings_come_from_the_environment():
     settings = from_environment({"BACKEND_URL": "http://backend:9000/", "EVENTS_ALLOWED_ORIGINS": "http://a, http://b/",
-                                 "EVENTS_INTERNAL_KEY": " k ", "BACKEND_TIMEOUT_MS": "60000"})
+                                 "EVENTS_INTERNAL_KEY": " k ", "BACKEND_TIMEOUT_MS": "60000",
+                                 "BACKEND_RETRIES": "1", "BACKEND_RETRY_FIRST_MS": "250"})
 
     assert settings.backend_url == "http://backend:9000"
     assert settings.allowed_origins == ("http://a", "http://b")
     assert settings.internal_key == "k"
     assert settings.backend_timeout_ms == 60000
-    assert from_environment({}).heartbeat_s == 15.0
+    assert (settings.backend_retries, settings.backend_retry_first_ms) == (1, 250)
+    defaults = from_environment({})
+    assert defaults.heartbeat_s == 15.0
+    assert (defaults.backend_retries, defaults.backend_retry_first_ms) == (3, 500)

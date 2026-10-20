@@ -22,6 +22,11 @@ MAX_MEASUREMENTS = 32
 EVENT_TYPES = ("reading", "alert")
 DEVICE_ID = re.compile(r"[A-Za-z0-9_-]{3,64}")
 BACKEND_REFUSED_US = "Falta la llave interna o no es válida."
+# The other form a device may send, {"deviceId", "timestamp", "datos": {...}}, and the measurement each name means.
+SPANISH_MEASUREMENTS = {"temperatura": "air_temperature", "humedad_aire": "relative_humidity",
+                        "humedad_suelo": "soil_moisture"}
+# What the backend answers when it stored nothing: its transaction was rolled back, or Render's proxy got no answer.
+RETRIED_STATUSES = (500, 502, 503, 504)
 
 
 class Json(JSONResponse):
@@ -58,6 +63,32 @@ def check_event(body: object) -> dict:
     return {"device_id": device_id.strip(), "type": kind, "ts": ts, "data": data}
 
 
+def from_spanish(body: object) -> object:
+    """Turns {"deviceId", "timestamp", "datos": {"temperatura", ...}} into this service's own form; others pass."""
+    if not isinstance(body, dict) or ("deviceId" not in body and "datos" not in body):
+        return body
+    if any(field in body for field in ("device_id", "ts", "data")):
+        raise Refused(400, "Usa un solo formato: {deviceId, timestamp, datos} o {device_id, type, ts, data}.")
+    datos = body.get("datos")
+    if not isinstance(datos, dict) or not datos:
+        raise Refused(400, "El campo 'datos' debe ser un objeto JSON con al menos un valor.")
+    data = {}
+    for name, value in datos.items():
+        if name not in SPANISH_MEASUREMENTS:
+            raise Refused(400, f"Medida desconocida en 'datos'. Usa: {', '.join(SPANISH_MEASUREMENTS)}.")
+        data[SPANISH_MEASUREMENTS[name]] = value
+    return {"device_id": body.get("deviceId"), "type": body.get("type", "reading"), "ts": body.get("timestamp"),
+            "data": data}
+
+
+def device_key_of(request: Request) -> str:
+    key = request.headers.get("X-Device-Key", "").strip()
+    alias = request.headers.get("X-API-KEY", "").strip()
+    if key and alias and key != alias:
+        raise Refused(400, "X-Device-Key y X-API-KEY traen llaves distintas; envía solo una.")
+    return key or alias
+
+
 def sse(kind: str, data: dict) -> bytes:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
 
@@ -67,6 +98,31 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
     app = FastAPI(title="AgroSense eventos", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.hub = hub
     timeout = httpx.Timeout(settings.backend_timeout_ms / 1000)
+
+    async def forward(event: dict, device_key: str) -> httpx.Response:
+        """Sends the event, again after a growing wait only when the backend surely stored nothing."""
+        attempts = settings.backend_retries + 1
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for attempt in range(1, attempts + 1):
+                if attempt > 1:
+                    await asyncio.sleep(settings.backend_retry_first_ms / 1000 * 2 ** (attempt - 2))
+                try:
+                    answer = await client.post(f"{settings.backend_url}/api/internal/events", json=event,
+                                               headers={"X-Internal-Key": settings.internal_key,
+                                                        "X-Device-Key": device_key})
+                except (httpx.ConnectError, httpx.ConnectTimeout) as error:
+                    # The request never reached the backend. A timeout while it answered is not retried: it may
+                    # have stored the event, and the backend would store it twice.
+                    if attempt == attempts:
+                        raise
+                    log.warning("Event from %s: backend unreachable (%s), attempt %d of %d", event["device_id"],
+                                type(error).__name__, attempt, attempts)
+                    continue
+                if answer.status_code not in RETRIED_STATUSES or attempt == attempts:
+                    return answer
+                log.warning("Event from %s: the backend answered %s, attempt %d of %d", event["device_id"],
+                            answer.status_code, attempt, attempts)
+        raise AssertionError("unreachable")
 
     @app.middleware("http")
     async def headers_and_access_log(request: Request, call_next):
@@ -103,17 +159,25 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
     @app.api_route("/", methods=["GET", "HEAD"])
     async def root():
         return Json({"service": "AgroSense eventos", "status": "UP", "health": "/health",
-                     "events": "POST /events", "stream": "GET /stream?token="})
+                     "events": "POST /events (o POST /webhook/eventos)", "stream": "GET /stream?token="})
 
     @app.api_route("/health", methods=["GET", "HEAD"])
     async def health():
         return Json({"status": "UP"})
 
     @app.post("/events")
+    @app.post("/webhook/eventos")
     async def receive(request: Request):
-        device_key = request.headers.get("X-Device-Key", "").strip()
+        try:
+            return await stored_or_refused(request)
+        except Refused as error:
+            log.info("Event refused: %s %s", error.status, error)
+            raise
+
+    async def stored_or_refused(request: Request):
+        device_key = device_key_of(request)
         if not device_key:
-            return _message(401, "Falta la cabecera X-Device-Key.")
+            raise Refused(401, "Falta la cabecera X-Device-Key (o X-API-KEY).")
         if request.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
             raise Refused(415, "Envía el evento como application/json.")
         try:
@@ -126,28 +190,26 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             body = json.loads((await request.body()).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             raise Refused(400, "El cuerpo no es JSON válido.") from None
-        event = check_event(body)
+        event = check_event(from_spanish(body))
+        log.info("Event received from %s: %s with %d value(s)", event["device_id"], event["type"], len(event["data"]))
         if not settings.internal_key:
             log.error("EVENTS_INTERNAL_KEY is empty: the event cannot be forwarded to the backend")
             return _message(502, "El servicio de eventos no está configurado; reintenta más tarde.")
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                answer = await client.post(f"{settings.backend_url}/api/internal/events", json=event,
-                                           headers={"X-Internal-Key": settings.internal_key,
-                                                    "X-Device-Key": device_key})
+            answer = await forward(event, device_key)
         except httpx.HTTPError as error:
-            log.warning("The backend did not answer while forwarding an event: %s", type(error).__name__)
+            log.warning("Event from %s: the backend did not answer (%s)", event["device_id"], type(error).__name__)
             return _message(502, "El backend no respondió; reintenta más tarde.")
         message = _backend_message(answer)
         if answer.status_code == 401 and message == BACKEND_REFUSED_US:
             log.error("The backend rejected this service's internal key: check EVENTS_INTERNAL_KEY")
             return _message(502, "El servicio de eventos no está configurado; reintenta más tarde.")
         if answer.status_code >= 500:
-            log.warning("The backend answered %s to an event", answer.status_code)
+            log.warning("Event from %s: the backend answered %s", event["device_id"], answer.status_code)
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         if answer.status_code != 200:
-            return _message(answer.status_code if answer.status_code in (400, 401, 403, 404, 409) else 400,
-                            message or "El backend rechazó el evento.")
+            raise Refused(answer.status_code if answer.status_code in (400, 401, 403, 404, 409) else 400,
+                          message or "El backend rechazó el evento.")
         try:
             stored = answer.json()
             owner = str(stored["ownerEmail"]).strip().lower()
@@ -156,6 +218,8 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             log.warning("The backend answered an event without the owner or the stored event")
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         delivered = hub.publish(owner, event["type"], delivered_event)
+        log.info("Event from %s stored: %d reading(s), %d alert(s), delivered to %d stream(s)", event["device_id"],
+                 len(delivered_event.get("readings") or []), len(delivered_event.get("alerts") or []), delivered)
         return Json({"status": "stored", "readings": len(delivered_event.get("readings") or []),
                      "alerts": len(delivered_event.get("alerts") or []), "delivered": delivered})
 
