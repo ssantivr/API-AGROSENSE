@@ -615,7 +615,7 @@
         "required": ["idAlert", "alertType", "severity", "message", "acknowledged", "idCrop", "cropName", "createdAt"],
         "properties": {
           "idAlert": { "type": "integer" },
-          "alertType": { "type": "string", "enum": ["LOW_HUMIDITY", "HIGH_HUMIDITY", "HIGH_TEMPERATURE", "LOW_TEMPERATURE", "PH_OUT_OF_RANGE", "HIGH_CONDUCTIVITY", "PEST_DETECTED", "RECOMMENDED_WATERING", "WATER_STRESS", "FROST_RISK", "SENSOR_OFFLINE"] },
+          "alertType": { "type": "string", "enum": ["LOW_HUMIDITY", "HIGH_HUMIDITY", "HIGH_TEMPERATURE", "LOW_TEMPERATURE", "PH_OUT_OF_RANGE", "HIGH_CONDUCTIVITY", "PEST_DETECTED", "RECOMMENDED_WATERING", "WATER_STRESS", "FROST_RISK", "SENSOR_OFFLINE", "SENSOR_FAULT"] },
           "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "VERY_HIGH"] },
           "message": { "type": "string" },
           "detectedValue": { "type": "number", "nullable": true },
