@@ -58,7 +58,7 @@ responde 400 diciendo cuál falta.
 
 | Respuesta | Qué hacer |
 |---|---|
-| 200 `{"status": "stored", "readings": 2, "alerts": 0, "delivered": 1}` | **Guardado en la base de datos**; `delivered` dice a cuántas pestañas abiertas llegó. Solo se responde 200 cuando el backend lo guardó |
+| 200 `{"status": "stored", "readings": 2, "alerts": 0, "delivered": 1}` | **Guardado en la base de datos**; `delivered` dice a cuántas pestañas abiertas llegó. Solo se responde 200 cuando el backend lo guardó. Si hay una orden de riego para el dispositivo, llega además en `command` (`firmware/README.md`) |
 | 400, 401, 404, 409, 413, 415 con `{"message"}` | El evento o la llave están mal: **no reintentar**, corregir |
 | 502 | El backend no respondió o no pudo guardarlo, ni siquiera tras los reintentos: **reintentar** más tarde (la Raspberry lo deja en su cola) |
 

@@ -220,8 +220,11 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
         delivered = hub.publish(owner, event["type"], delivered_event)
         log.info("Event from %s stored: %d reading(s), %d alert(s), delivered to %d stream(s)", event["device_id"],
                  len(delivered_event.get("readings") or []), len(delivered_event.get("alerts") or []), delivered)
-        return Json({"status": "stored", "readings": len(delivered_event.get("readings") or []),
-                     "alerts": len(delivered_event.get("alerts") or []), "delivered": delivered})
+        reply = {"status": "stored", "readings": len(delivered_event.get("readings") or []),
+                 "alerts": len(delivered_event.get("alerts") or []), "delivered": delivered}
+        if isinstance(stored.get("command"), dict):
+            reply["command"] = stored["command"]
+        return Json(reply)
 
     @app.get("/stream")
     async def stream(request: Request, token: str = ""):
