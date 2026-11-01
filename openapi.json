@@ -2614,8 +2614,13 @@
                 "type": "string",
                 "enum": [
                   "started",
-                  "refused"
+                  "refused",
+                  "finished"
                 ]
+              },
+              "ran_seconds": {
+                "type": "integer",
+                "description": "Con `finished`: los segundos que funcionó la bomba. Corrige el riego en el historial."
               }
             }
           }
