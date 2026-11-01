@@ -60,7 +60,13 @@ def check_event(body: object) -> dict:
     ts = body.get("ts")
     if ts is not None and (isinstance(ts, bool) or not isinstance(ts, (str, int, float))):
         raise Refused(400, "El campo 'ts' debe ser una fecha ISO-8601 o un número de segundos.")
-    return {"device_id": device_id.strip(), "type": kind, "ts": ts, "data": data}
+    ack = body.get("ack")
+    if ack is not None and not isinstance(ack, dict):
+        raise Refused(400, "El campo 'ack' debe ser un objeto JSON.")
+    event = {"device_id": device_id.strip(), "type": kind, "ts": ts, "data": data}
+    if ack is not None:
+        event["ack"] = ack
+    return event
 
 
 def from_spanish(body: object) -> object:
@@ -208,7 +214,7 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             log.warning("Event from %s: the backend answered %s", event["device_id"], answer.status_code)
             return _message(502, "El backend no pudo guardar el evento; reintenta más tarde.")
         if answer.status_code != 200:
-            raise Refused(answer.status_code if answer.status_code in (400, 401, 403, 404, 409) else 400,
+            raise Refused(answer.status_code if answer.status_code in (400, 401, 403, 404, 409, 429) else 400,
                           message or "El backend rechazó el evento.")
         try:
             stored = answer.json()
