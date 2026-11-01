@@ -113,6 +113,31 @@ def test_an_event_is_forwarded_with_both_keys_and_answered_with_what_was_stored(
     assert sent["json"] == EVENT
 
 
+def test_an_irrigation_order_reaches_the_device_and_its_result_reaches_the_backend(backend):
+    backend.answer(200, {**STORED, "command": {"id": 12, "type": "irrigate", "source": "AI", "minutes": 7}})
+    client = TestClient(create_app(settings_for(backend.url)))
+
+    response = send(client, {**EVENT, "ack": {"command_id": 11, "result": "started"}})
+
+    assert response.json()["command"]["id"] == 12
+    assert backend.requests[0]["json"]["ack"] == {"command_id": 11, "result": "started"}
+
+
+def test_the_rate_limit_of_the_backend_reaches_the_device_so_it_retries(backend):
+    backend.answer(429, {"message": "Demasiados eventos de este dispositivo; reintenta en un minuto."})
+    client = TestClient(create_app(settings_for(backend.url)))
+
+    assert send(client).status_code == 429
+
+
+@pytest.mark.parametrize("ack", ["started", 12, ["x"]])
+def test_an_ack_that_is_not_an_object_is_refused(backend, ack):
+    client = TestClient(create_app(settings_for(backend.url)))
+
+    assert send(client, {**EVENT, "ack": ack}).status_code == 400
+    assert backend.requests == []
+
+
 @pytest.mark.parametrize("body, expected", [
     ({**EVENT, "device_id": "x"}, "device_id"),
     ({**EVENT, "device_id": "rpi demo"}, "device_id"),
