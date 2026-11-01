@@ -1580,6 +1580,46 @@
           }
         }
       }
+    },
+    "/api/crop-templates": {
+      "get": {
+        "tags": [
+          "Dispositivos"
+        ],
+        "summary": "Plantillas de cultivo con sus rangos de partida",
+        "description": "Rangos de partida, no validados agronómicamente. Cada respuesta es una copia: nada cambia el catálogo.",
+        "operationId": "listCropTemplates",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plantillas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CropTemplate"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Falta el token o no es válido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1904,7 +1944,8 @@
               "CAFE",
               "CACAO",
               "AGUACATE",
-              "MAIZ"
+              "MAIZ",
+              "TOMATE"
             ],
             "description": "Plantilla con rangos de partida; los rangos enviados en la misma petición la sustituyen."
           },
@@ -2792,6 +2833,45 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "CropTemplate": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "humidityMin",
+          "humidityMax",
+          "tempMin",
+          "tempMax",
+          "phMin",
+          "phMax"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "humidityMin": {
+            "type": "number"
+          },
+          "humidityMax": {
+            "type": "number"
+          },
+          "tempMin": {
+            "type": "number"
+          },
+          "tempMax": {
+            "type": "number"
+          },
+          "phMin": {
+            "type": "number"
+          },
+          "phMax": {
+            "type": "number"
           }
         }
       }
