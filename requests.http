@@ -91,3 +91,17 @@ X-Internal-Key: {{$processEnv AGROSENSE_IA_KEY}}
 Content-Type: application/json
 
 { "deviceId": "RPI-DEMO-01", "datos": { "temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 28 } }
+
+### Registrar un dispositivo: la llave solo aparece en esta respuesta
+POST {{baseUrl}}/api/devices
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "cropId": 1, "deviceCode": "UNO-R4-01" }
+
+### Evento de un dispositivo, con la confirmación de una orden de riego (401 sin llave, 403 con otra, 409 inactivo, 429 por exceso)
+POST http://localhost:8100/events
+Content-Type: application/json
+X-Device-Key: {{deviceKey}}
+
+{ "device_id": "UNO-R4-01", "type": "reading", "ts": 1793500000, "data": { "soil_moisture": 31.5 }, "ack": { "command_id": 12, "result": "started" } }
