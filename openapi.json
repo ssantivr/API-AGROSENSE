@@ -532,6 +532,7 @@
           "name": { "type": "string", "maxLength": 255 },
           "variety": { "type": "string", "maxLength": 255 },
           "sowingDate": { "type": "string", "format": "date" },
+          "template": { "type": "string", "enum": ["CAFE", "CACAO", "AGUACATE", "MAIZ"], "description": "Plantilla con rangos de partida; los rangos enviados en la misma petición la sustituyen." },
           "humidityMin": { "type": "number", "minimum": 0, "maximum": 100, "description": "Hasta 2 decimales. Solo junto con `humidityMax` y menor que él." },
           "humidityMax": { "type": "number", "minimum": 0, "maximum": 100 },
           "tempMin": { "type": "number", "minimum": -50, "maximum": 80, "description": "Solo junto con `tempMax` y menor que él." },
@@ -614,7 +615,7 @@
         "required": ["idAlert", "alertType", "severity", "message", "acknowledged", "idCrop", "cropName", "createdAt"],
         "properties": {
           "idAlert": { "type": "integer" },
-          "alertType": { "type": "string", "enum": ["LOW_HUMIDITY", "HIGH_HUMIDITY", "HIGH_TEMPERATURE", "LOW_TEMPERATURE", "PH_OUT_OF_RANGE", "HIGH_CONDUCTIVITY", "PEST_DETECTED", "RECOMMENDED_WATERING", "WATER_STRESS"] },
+          "alertType": { "type": "string", "enum": ["LOW_HUMIDITY", "HIGH_HUMIDITY", "HIGH_TEMPERATURE", "LOW_TEMPERATURE", "PH_OUT_OF_RANGE", "HIGH_CONDUCTIVITY", "PEST_DETECTED", "RECOMMENDED_WATERING", "WATER_STRESS", "FROST_RISK", "SENSOR_OFFLINE"] },
           "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "VERY_HIGH"] },
           "message": { "type": "string" },
           "detectedValue": { "type": "number", "nullable": true },
