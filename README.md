@@ -131,6 +131,7 @@ python -m venv .venv
 | `EVENTS_STREAM_SECRET` | La misma que `EVENTS_STREAM_SECRET` del backend (al menos 32 bytes) |
 | `EVENTS_ALLOWED_ORIGINS` | Orígenes del frontend, separados por comas |
 | `BACKEND_TIMEOUT_MS` | Cuánto se espera al backend (30000). En Render gratuito el backend se duerme y la primera petición tarda más |
+| `BACKEND_BUDGET_MS` | Tiempo total para reenviar un evento (40 s): no se reintenta si el siguiente intento puede acabar más tarde, porque el firmware deja de esperar a los 45 s y la respuesta, con la orden de riego que lleve, no llegaría a nadie |
 | `BACKEND_RETRIES`, `BACKEND_RETRY_FIRST_MS` | Reintentos cuando el backend no guardó nada (3) y la primera espera entre ellos (500 ms, luego el doble cada vez). `0` los desactiva |
 | `EVENTS_HEARTBEAT_S`, `EVENTS_MAX_STREAMS_PER_USER`, `EVENTS_MAX_STREAMS` | 15 s, 5 y 500 |
 | `LOG_LEVEL` | `INFO` |
