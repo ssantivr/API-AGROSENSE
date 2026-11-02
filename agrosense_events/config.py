@@ -9,6 +9,7 @@ class Settings:
     stream_secret: str = ""
     allowed_origins: tuple[str, ...] = ()
     backend_timeout_ms: int = 30000
+    backend_budget_ms: int = 40000  # below the 45 s the firmware waits for this service's answer
     backend_retries: int = 3
     backend_retry_first_ms: int = 500
     heartbeat_s: float = 15.0
@@ -33,6 +34,7 @@ def from_environment(environ: dict | None = None) -> Settings:
         allowed_origins=tuple(origin.strip().rstrip("/") for origin in env.get("EVENTS_ALLOWED_ORIGINS", "").split(",")
                               if origin.strip()),
         backend_timeout_ms=int(number("BACKEND_TIMEOUT_MS", 30000)),
+        backend_budget_ms=int(number("BACKEND_BUDGET_MS", 40000)),
         backend_retries=max(0, int(number("BACKEND_RETRIES", 3))),
         backend_retry_first_ms=max(0, int(number("BACKEND_RETRY_FIRST_MS", 500))),
         heartbeat_s=number("EVENTS_HEARTBEAT_S", 15.0),

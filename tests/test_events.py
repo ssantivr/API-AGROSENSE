@@ -500,3 +500,26 @@ def test_settings_come_from_the_environment():
     defaults = from_environment({})
     assert defaults.heartbeat_s == 15.0
     assert (defaults.backend_retries, defaults.backend_retry_first_ms) == (3, 500)
+
+
+@pytest.mark.parametrize("raw", ['{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":NaN}}',
+                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":Infinity}}',
+                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":1e999}}',
+                                 '{"device_id":"RPI-01","type":"reading","ts":1e999,"data":{"soil_moisture":1}}',
+                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":{"value":-1e999}}}',
+                                 "[" * 16000],
+                         ids=["nan", "infinity", "overflow", "overflow-ts", "nested-overflow", "too-deep"])
+def test_what_json_itself_cannot_carry_is_refused_not_a_500_the_device_would_retry_for_ever(backend, raw):
+    with TestClient(create_app(settings_for(backend.url))) as client:
+        answer = send(client, raw=raw.encode())
+    assert answer.status_code == 400
+    assert backend.requests == []
+
+
+def test_retries_stop_in_time_for_the_device_to_hear_the_answer(backend):
+    backend.answer(503, {})
+    with TestClient(create_app(settings_for(backend.url, backend_retry_first_ms=1, backend_timeout_ms=5000,
+                                            backend_budget_ms=5000))) as client:
+        answer = send(client, {"device_id": "RPI-01", "type": "reading", "data": {"soil_moisture": 40}})
+    assert answer.status_code == 502
+    assert len(backend.requests) == 1

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 
@@ -41,6 +42,31 @@ class Refused(Exception):
 
 def _message(status: int, message: str, **headers: str) -> Json:
     return Json({"message": message}, status_code=status, headers=headers or None)
+
+
+def _reject_constant(name: str) -> float:
+    raise ValueError(name)
+
+
+def _finite(value: object) -> bool:
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, dict):
+        return all(_finite(item) for item in value.values())
+    if isinstance(value, list):
+        return all(_finite(item) for item in value)
+    return True
+
+
+def decode_event(raw: bytes) -> object:
+    """JSON has no NaN and no infinity, and forwarding one would fail here: a 500, which the device retries for ever."""
+    try:
+        body = json.loads(raw.decode("utf-8"), parse_constant=_reject_constant)
+        if not _finite(body):
+            raise ValueError("not finite")
+    except (ValueError, RecursionError):
+        raise Refused(400, "El cuerpo no es JSON válido.") from None
+    return body
 
 
 def check_event(body: object) -> dict:
@@ -106,8 +132,19 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
     timeout = httpx.Timeout(settings.backend_timeout_ms / 1000)
 
     async def forward(event: dict, device_key: str) -> httpx.Response:
-        """Sends the event, again after a growing wait only when the backend surely stored nothing."""
+        """
+        Sends the event, again after a growing wait only when the backend surely stored nothing, and only while a next
+        attempt can end within the budget: past it the device has given up and an answer would reach nobody.
+        """
         attempts = settings.backend_retries + 1
+        started = time.monotonic()
+
+        def last(attempt: int) -> bool:
+            wait = settings.backend_retry_first_ms / 1000 * 2 ** (attempt - 1)
+            elapsed = time.monotonic() - started
+            return attempt == attempts or \
+                elapsed + wait + settings.backend_timeout_ms / 1000 > settings.backend_budget_ms / 1000
+
         async with httpx.AsyncClient(timeout=timeout) as client:
             for attempt in range(1, attempts + 1):
                 if attempt > 1:
@@ -119,12 +156,12 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
                 except (httpx.ConnectError, httpx.ConnectTimeout) as error:
                     # The request never reached the backend. A timeout while it answered is not retried: it may
                     # have stored the event, and the backend would store it twice.
-                    if attempt == attempts:
+                    if last(attempt):
                         raise
                     log.warning("Event from %s: backend unreachable (%s), attempt %d of %d", event["device_id"],
                                 type(error).__name__, attempt, attempts)
                     continue
-                if answer.status_code not in RETRIED_STATUSES or attempt == attempts:
+                if answer.status_code not in RETRIED_STATUSES or last(attempt):
                     return answer
                 log.warning("Event from %s: the backend answered %s, attempt %d of %d", event["device_id"],
                             answer.status_code, attempt, attempts)
@@ -192,11 +229,7 @@ def create_app(settings: Settings, hub: Hub | None = None) -> FastAPI:
             raise Refused(411, "Falta la cabecera Content-Length.") from None
         if length > MAX_EVENT_BYTES:
             return _message(413, "El evento es demasiado grande.", Connection="close")
-        try:
-            body = json.loads((await request.body()).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            raise Refused(400, "El cuerpo no es JSON válido.") from None
-        event = check_event(from_spanish(body))
+        event = check_event(from_spanish(decode_event(await request.body())))
         log.info("Event received from %s: %s with %d value(s)", event["device_id"], event["type"], len(event["data"]))
         if not settings.internal_key:
             log.error("EVENTS_INTERNAL_KEY is empty: the event cannot be forwarded to the backend")
