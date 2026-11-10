@@ -1243,7 +1243,7 @@
           "Servicio de IA (interno)"
         ],
         "summary": "Analizar una lectura: si hace falta actuar y qué hacer",
-        "description": "Aplica a una lectura, en la forma en que la envía la Raspberry, las mismas reglas de riego que `POST /predict/irrigation` del servicio de IA, y devuelve solo la alerta y la recomendación. Solo `humedad_suelo` es obligatoria; `humedad_aire` se valida pero ninguna regla la usa todavía. Sin `humidity_min` y `humidity_max` se usa el rango por defecto del backend, 40–80 %.\n\n`alerta` es `true` cuando hay que actuar: humedad por debajo del mínimo (regar) o por encima del máximo (revisar el drenaje), o riesgo de helada (≤ 2 °C). Un riego corto preventivo por calor no es una alerta. La IA no guarda nada: guardar la alerta es cosa del backend.\n\nSi el servicio no tiene `INTERNAL_API_KEY` ni `AI_SERVICE_TOKEN`, responde sin pedir llave (solo en local).",
+        "description": "Aplica a una lectura, en la forma alternativa del webhook (`{deviceId, datos}`), las mismas reglas de riego que `POST /predict/irrigation` del servicio de IA, y devuelve solo la alerta y la recomendación. Solo `humedad_suelo` es obligatoria; `humedad_aire` se valida pero ninguna regla la usa todavía. Sin `humidity_min` y `humidity_max` se usa el rango por defecto del backend, 40–80 %.\n\n`alerta` es `true` cuando hay que actuar: humedad por debajo del mínimo (regar) o por encima del máximo (revisar el drenaje), o riesgo de helada (≤ 2 °C). Un riego corto preventivo por calor no es una alerta. La IA no guarda nada: guardar la alerta es cosa del backend.\n\nSi el servicio no tiene `INTERNAL_API_KEY` ni `AI_SERVICE_TOKEN`, responde sin pedir llave (solo en local).",
         "operationId": "analyzeReading",
         "security": [
           {
@@ -1420,7 +1420,7 @@
           "Dispositivos"
         ],
         "summary": "Enviar un evento desde un dispositivo",
-        "description": "Lo usan el Arduino y el simulador. Guarda las lecturas a través del backend y entrega en la respuesta la orden de riego que esté esperando.",
+        "description": "Lo usa el ESP32 (y `tools/e2e/run_e2e.py` sin placa). Guarda las lecturas a través del backend y entrega en la respuesta la orden de riego que esté esperando.",
         "operationId": "sendDeviceEvent",
         "security": [
           {
@@ -2490,7 +2490,7 @@
         "required": [
           "datos"
         ],
-        "description": "Una lectura como la envía la Raspberry al webhook. `deviceId` y `timestamp` se aceptan y no se usan.",
+        "description": "Una lectura en la forma alternativa del webhook. `deviceId` y `timestamp` se aceptan y no se usan.",
         "properties": {
           "deviceId": {
             "type": "string",
