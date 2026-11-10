@@ -1,11 +1,11 @@
 # Servicio de eventos de AgroSense
 
-Manejador de eventos (webhook) de AgroSense. Recibe por HTTP los eventos que envían las Raspberry Pi del
-campo, los reenvía al backend para que los guarde y los empuja en tiempo real al navegador del dueño del
+Manejador de eventos (webhook) de AgroSense. Recibe por HTTP los eventos que envían los dispositivos ESP32 del
+campo (`firmware/`), los reenvía al backend para que los guarde y los empuja en tiempo real al navegador del dueño del
 dispositivo.
 
 ```
-Raspberry ──POST /events──▶ servicio de eventos ──POST /api/internal/events──▶ backend ──▶ BD
+ESP32 ────POST /events──▶ servicio de eventos ──POST /api/internal/events──▶ backend ──▶ BD
                                      │                                            │
                                      │◀───────────── {ownerEmail, event} ─────────┘
                                      └──GET /stream (SSE)──▶ navegador del dueño
@@ -16,7 +16,7 @@ dispositivo, guarda el evento y dice de quién es; este servicio solo lo entrega
 
 ## Rutas
 
-### `POST /events` o `POST /webhook/eventos` (lo llama la Raspberry)
+### `POST /events` o `POST /webhook/eventos` (lo llama el ESP32)
 
 Las dos rutas son la misma. Cabecera `X-Device-Key` (o `X-API-KEY`, que es lo mismo) con la llave del
 dispositivo, que se obtiene al registrarlo (`POST /api/devices` del backend) y solo se muestra esa vez. Cada
@@ -60,7 +60,7 @@ responde 400 diciendo cuál falta.
 |---|---|
 | 200 `{"status": "stored", "readings": 2, "alerts": 0, "delivered": 1}` | **Guardado en la base de datos**; `delivered` dice a cuántas pestañas abiertas llegó. Solo se responde 200 cuando el backend lo guardó. Si hay una orden de riego para el dispositivo, llega además en `command` (`firmware/README.md`) |
 | 400, 401, 404, 409, 413, 415 con `{"message"}` | El evento o la llave están mal: **no reintentar**, corregir |
-| 502 | El backend no respondió o no pudo guardarlo, ni siquiera tras los reintentos: **reintentar** más tarde (la Raspberry lo deja en su cola) |
+| 502 | El backend no respondió o no pudo guardarlo, ni siquiera tras los reintentos: **reintentar** más tarde (el ESP32 lo deja en su búfer) |
 
 **Reintentos hacia el backend.** Si el backend no se pudo contactar o respondió 500, 502, 503 o 504 (no
 guardó nada: su transacción se deshizo, o el proxy de Render no lo despertó a tiempo), el servicio lo
@@ -104,8 +104,8 @@ data: {}
 
 ## Seguridad
 
-- Hacia el backend, cada evento lleva `X-Internal-Key` (`EVENTS_INTERNAL_KEY`) y la `X-Device-Key` de la
-  Raspberry; el backend rechaza cualquier otra cosa. Sin `EVENTS_INTERNAL_KEY` el servicio no reenvía nada
+- Hacia el backend, cada evento lleva `X-Internal-Key` (`EVENTS_INTERNAL_KEY`) y la `X-Device-Key` del
+  dispositivo; el backend rechaza cualquier otra cosa. Sin `EVENTS_INTERNAL_KEY` el servicio no reenvía nada
   (502).
 - El token del canal va en la dirección porque `EventSource` no permite cabeceras. Lo mitigan su vida de 5
   minutos y que **este servicio no registra la parte de la dirección después de `?`**: el registro de
