@@ -90,7 +90,7 @@ POST {{iaUrl}}/analizar
 X-Internal-Key: {{$processEnv AGROSENSE_IA_KEY}}
 Content-Type: application/json
 
-{ "deviceId": "RPI-DEMO-01", "datos": { "temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 28 } }
+{ "deviceId": "ESP32-PLANTICAS", "datos": { "temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 28 } }
 
 ### Registrar un dispositivo: la llave solo aparece en esta respuesta
 POST {{baseUrl}}/api/devices

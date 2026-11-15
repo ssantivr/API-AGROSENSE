@@ -2494,7 +2494,7 @@
         "properties": {
           "deviceId": {
             "type": "string",
-            "example": "RPI-DEMO-01"
+            "example": "ESP32-PLANTICAS"
           },
           "timestamp": {
             "type": "string",
