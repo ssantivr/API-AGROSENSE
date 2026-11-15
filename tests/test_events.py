@@ -18,9 +18,9 @@ INTERNAL_KEY = "internal-key-of-the-events"
 STREAM_SECRET = "stream-secret-of-at-least-32-bytes"
 DEVICE_KEY = "device-key"
 OWNER = "demo@agrosense.co"
-EVENT = {"device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-16T08:00:00Z",
+EVENT = {"device_id": "ESP32-PLANTICAS", "type": "reading", "ts": "2026-10-16T08:00:00Z",
          "data": {"soil_moisture": 31.5, "ph": 6.4}}
-STORED = {"ownerEmail": OWNER, "event": {"type": "reading", "deviceId": "RPI-DEMO-01", "cropId": 1,
+STORED = {"ownerEmail": OWNER, "event": {"type": "reading", "deviceId": "ESP32-PLANTICAS", "cropId": 1,
                                          "cropName": "Café", "readings": [{"sensorCode": "AS-001", "value": 31.5},
                                                                            {"sensorCode": "AS-003", "value": 6.4}],
                                          "alerts": []}}
@@ -205,7 +205,7 @@ def test_a_backend_that_is_down_or_too_slow_is_a_502(backend):
     assert send(slow).status_code == 502
 
 
-SPANISH_EVENT = {"deviceId": "RPI-DEMO-01", "timestamp": "2026-10-20T10:00:00Z",
+SPANISH_EVENT = {"deviceId": "ESP32-PLANTICAS", "timestamp": "2026-10-20T10:00:00Z",
                  "datos": {"temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 41}}
 
 
@@ -214,12 +214,12 @@ def test_the_spanish_form_reaches_the_backend_in_the_services_own_form(backend):
 
     assert response.status_code == 200
     assert backend.requests[0]["json"] == {
-        "device_id": "RPI-DEMO-01", "type": "reading", "ts": "2026-10-20T10:00:00Z",
+        "device_id": "ESP32-PLANTICAS", "type": "reading", "ts": "2026-10-20T10:00:00Z",
         "data": {"air_temperature": 24.5, "relative_humidity": 60, "soil_moisture": 41}}
 
 
 def test_the_spanish_form_without_a_time_is_stamped_by_the_backend_on_arrival(backend):
-    body = {"deviceId": "RPI-DEMO-01", "datos": {"temperatura": 25, "humedad_suelo": 40}}
+    body = {"deviceId": "ESP32-PLANTICAS", "datos": {"temperatura": 25, "humedad_suelo": 40}}
 
     assert send(TestClient(create_app(settings_for(backend.url))), body).status_code == 200
     assert backend.requests[0]["json"]["ts"] is None
@@ -315,11 +315,11 @@ def test_each_event_and_each_failure_is_logged_without_the_keys(backend, caplog)
         send(client)
 
     written = "\n".join(record.getMessage() for record in caplog.records)
-    assert "Event received from RPI-DEMO-01: reading with 3 value(s)" in written
-    assert "Event from RPI-DEMO-01 stored: 2 reading(s), 0 alert(s), delivered to 0 stream(s)" in written
+    assert "Event received from ESP32-PLANTICAS: reading with 3 value(s)" in written
+    assert "Event from ESP32-PLANTICAS stored: 2 reading(s), 0 alert(s), delivered to 0 stream(s)" in written
     assert "Event refused: 401 Dispositivo desconocido o llave incorrecta." in written
-    assert "Event from RPI-DEMO-01: the backend answered 503, attempt 1 of 4" in written
-    assert "Event from RPI-DEMO-01: the backend answered 503" in written.splitlines()
+    assert "Event from ESP32-PLANTICAS: the backend answered 503, attempt 1 of 4" in written
+    assert "Event from ESP32-PLANTICAS: the backend answered 503" in written.splitlines()
     for secret in (DEVICE_KEY, INTERNAL_KEY):
         assert secret not in written
 
@@ -502,11 +502,11 @@ def test_settings_come_from_the_environment():
     assert (defaults.backend_retries, defaults.backend_retry_first_ms) == (3, 500)
 
 
-@pytest.mark.parametrize("raw", ['{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":NaN}}',
-                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":Infinity}}',
-                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":1e999}}',
-                                 '{"device_id":"RPI-01","type":"reading","ts":1e999,"data":{"soil_moisture":1}}',
-                                 '{"device_id":"RPI-01","type":"reading","data":{"soil_moisture":{"value":-1e999}}}',
+@pytest.mark.parametrize("raw", ['{"device_id":"ESP32-01","type":"reading","data":{"soil_moisture":NaN}}',
+                                 '{"device_id":"ESP32-01","type":"reading","data":{"soil_moisture":Infinity}}',
+                                 '{"device_id":"ESP32-01","type":"reading","data":{"soil_moisture":1e999}}',
+                                 '{"device_id":"ESP32-01","type":"reading","ts":1e999,"data":{"soil_moisture":1}}',
+                                 '{"device_id":"ESP32-01","type":"reading","data":{"soil_moisture":{"value":-1e999}}}',
                                  "[" * 16000],
                          ids=["nan", "infinity", "overflow", "overflow-ts", "nested-overflow", "too-deep"])
 def test_what_json_itself_cannot_carry_is_refused_not_a_500_the_device_would_retry_for_ever(backend, raw):
@@ -520,6 +520,6 @@ def test_retries_stop_in_time_for_the_device_to_hear_the_answer(backend):
     backend.answer(503, {})
     with TestClient(create_app(settings_for(backend.url, backend_retry_first_ms=1, backend_timeout_ms=5000,
                                             backend_budget_ms=5000))) as client:
-        answer = send(client, {"device_id": "RPI-01", "type": "reading", "data": {"soil_moisture": 40}})
+        answer = send(client, {"device_id": "ESP32-01", "type": "reading", "data": {"soil_moisture": 40}})
     assert answer.status_code == 502
     assert len(backend.requests) == 1

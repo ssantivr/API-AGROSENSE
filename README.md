@@ -25,7 +25,7 @@ Cuerpo JSON de hasta 16 kB:
 
 ```json
 {
-  "device_id": "RPI-DEMO-01",
+  "device_id": "ESP32-PLANTICAS",
   "type": "reading",
   "ts": "2026-10-16T08:00:00-05:00",
   "data": {"soil_moisture": 31.5, "air_temperature": 24.1, "ph": 6.4}
@@ -42,7 +42,7 @@ Cuerpo JSON de hasta 16 kB:
 También se acepta esta otra forma, que el servicio traduce a la anterior antes de reenviarla:
 
 ```json
-{"deviceId": "RPI-DEMO-01", "timestamp": "2026-10-20T10:00:00Z",
+{"deviceId": "ESP32-PLANTICAS", "timestamp": "2026-10-20T10:00:00Z",
  "datos": {"temperatura": 24.5, "humedad_aire": 60, "humedad_suelo": 41}}
 ```
 
@@ -85,7 +85,7 @@ event: ready
 data: {"expiresAt": 1792206449}
 
 event: reading
-data: {"type": "reading", "deviceId": "RPI-DEMO-01", "cropId": 1, "cropName": "Café", "readings": [...], "alerts": [...]}
+data: {"type": "reading", "deviceId": "ESP32-PLANTICAS", "cropId": 1, "cropName": "Café", "readings": [...], "alerts": [...]}
 
 : ping
 
