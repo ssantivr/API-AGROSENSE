@@ -671,6 +671,31 @@
         }
       }
     },
+    "/api/data-sources": {
+      "get": {
+        "tags": [
+          "Sensores y lecturas"
+        ],
+        "summary": "Catálogo de trazabilidad: de dónde sale cada dato",
+        "operationId": "dataSources",
+        "description": "Para lecturas, alertas, predicciones de riego, riegos, indicadores del panel y chat de IA: origen, clase productora, columna donde se guarda, ruta que lo sirve y archivo del repositorio. Añade el conteo de lecturas de las últimas 24 horas por origen y si el sensor virtual está encendido.",
+        "responses": {
+          "200": {
+            "description": "Catálogo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSources"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
     "/api/alerts": {
       "get": {
         "tags": [
@@ -2158,7 +2183,8 @@
           "sensorCode",
           "sensorType",
           "value",
-          "recordedAt"
+          "recordedAt",
+          "source"
         ],
         "properties": {
           "idReading": {
@@ -2189,8 +2215,12 @@
           "recordedAt": {
             "type": "string",
             "example": "2026-10-11T10:51:19.308"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ReadingSource"
           }
-        }
+        },
+        "description": "Lectura de un sensor. La misma forma se publica en vivo por STOMP en `/user/queue/sensores` (WebSocket `/ws`), incluido `source`."
       },
       "Alert": {
         "type": "object",
@@ -2874,6 +2904,104 @@
           },
           "phMax": {
             "type": "number"
+          }
+        }
+      },
+      "ReadingSource": {
+        "type": "string",
+        "enum": [
+          "DEVICE",
+          "ESP32_TCP",
+          "SIMULATED",
+          "SEED",
+          "MANUAL"
+        ],
+        "description": "Origen de la lectura (`sensor_readings.source`): `DEVICE` evento de dispositivo (`POST /api/internal/events`) o MQTT; `ESP32_TCP` ESP32 leído por TCP; `SIMULATED` sensor virtual (`VirtualSensorSimulator`, solo mientras no llegan lecturas reales); `SEED` datos de ejemplo; `MANUAL` `POST /api/readings`."
+      },
+      "DataSourceEntry": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "origin",
+          "producer",
+          "endpoint",
+          "file"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "readings.esp32"
+          },
+          "label": {
+            "type": "string",
+            "example": "Lecturas del ESP32 (promedio por ventana)"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "SENSOR_FISICO",
+              "SENSOR_VIRTUAL",
+              "ENDPOINT",
+              "IA",
+              "SEED",
+              "CALCULO"
+            ]
+          },
+          "producer": {
+            "type": "string",
+            "description": "Clase Java exacta que produce el dato (o el script SQL para `SEED`).",
+            "example": "com.agrosense.backend.pattern.structural.adapter.esp32.Esp32TcpIngestionService"
+          },
+          "storage": {
+            "type": "string",
+            "nullable": true,
+            "description": "`tabla.columna` donde se guarda; null si no se guarda (se calcula al pedirlo).",
+            "example": "sensor_readings.reading_value (source = ESP32_TCP)"
+          },
+          "endpoint": {
+            "type": "string",
+            "example": "GET /api/sensors/{sensorId}/readings"
+          },
+          "file": {
+            "type": "string",
+            "description": "Ruta del archivo en el repositorio.",
+            "example": "backend/agrosense/src/main/java/com/agrosense/backend/service/VirtualSensorSimulator.java"
+          }
+        }
+      },
+      "DataSources": {
+        "type": "object",
+        "required": [
+          "sources",
+          "readingCountsBySource",
+          "simulatorEnabled"
+        ],
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataSourceEntry"
+            }
+          },
+          "readingCountsBySource": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "description": "Lecturas de los sensores del usuario en las últimas 24 horas por origen; cada valor de `ReadingSource` aparece, con 0 si no hay.",
+            "example": {
+              "DEVICE": 0,
+              "ESP32_TCP": 0,
+              "SIMULATED": 1440,
+              "SEED": 24,
+              "MANUAL": 1
+            }
+          },
+          "simulatorEnabled": {
+            "type": "boolean",
+            "description": "Si el sensor virtual está encendido (`SIMULATOR_ENABLED`)."
           }
         }
       }
